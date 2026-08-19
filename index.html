@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PDF Toolbox</title>
+  <meta name="description" content="Strumenti PDF online semplici e veloci." />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="container nav">
+      <a class="brand" href="#">
+        <span class="brand-mark">PDF</span>
+        <span>Toolbox</span>
+      </a>
+      <nav>
+        <a href="#tools">Strumenti</a>
+        <a href="#privacy">Privacy</a>
+        <a href="#faq">FAQ</a>
+      </nav>
+      <button class="icon-btn" id="themeBtn" aria-label="Cambia tema">◐</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="container hero-inner">
+        <span class="eyebrow">STRUMENTI PDF ONLINE</span>
+        <h1>Tutto quello che ti serve per lavorare con i PDF.</h1>
+        <p>Unisci, dividi, comprimi, converti e modifica i tuoi documenti direttamente dal browser.</p>
+        <div class="search-wrap">
+          <span>⌕</span>
+          <input id="toolSearch" type="search" placeholder="Cerca uno strumento..." />
+        </div>
+        <div class="privacy-pill">🔒 I file vengono elaborati localmente quando possibile</div>
+      </div>
+    </section>
+
+    <section class="container section" id="tools">
+      <div class="section-head">
+        <div>
+          <h2>Strumenti PDF</h2>
+          <p>Scegli cosa vuoi fare.</p>
+        </div>
+        <span id="toolCount"></span>
+      </div>
+
+      <div class="tools-grid" id="toolsGrid"></div>
+    </section>
+
+    <section class="soft-section" id="privacy">
+      <div class="container split">
+        <div>
+          <span class="eyebrow">PRIVACY</span>
+          <h2>I tuoi documenti restano tuoi.</h2>
+          <p>Questa demo usa elaborazione nel browser per le funzioni disponibili. Per operazioni più avanzate puoi collegare in futuro un backend dedicato.</p>
+        </div>
+        <div class="feature-list">
+          <div>✓ Nessuna registrazione richiesta</div>
+          <div>✓ Interfaccia responsive</div>
+          <div>✓ Drag & drop</div>
+          <div>✓ Elaborazione locale per JPG → PDF</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="container section" id="faq">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">FAQ</span>
+          <h2>Domande frequenti</h2>
+        </div>
+      </div>
+      <details>
+        <summary>È già funzionante?</summary>
+        <p>La struttura del sito, ricerca strumenti, upload, drag & drop e conversione JPG → PDF sono funzionanti. Gli altri strumenti sono predisposti per essere collegati alla relativa logica PDF.</p>
+      </details>
+      <details>
+        <summary>Posso metterlo online?</summary>
+        <p>Sì. È un sito statico e può essere pubblicato su Netlify, Vercel, GitHub Pages o un normale hosting.</p>
+      </details>
+    </section>
+  </main>
+
+  <div class="modal" id="toolModal" aria-hidden="true">
+    <div class="modal-card">
+      <button class="modal-close" id="modalClose">×</button>
+      <div class="modal-icon" id="modalIcon"></div>
+      <h2 id="modalTitle"></h2>
+      <p id="modalDesc"></p>
+
+      <label class="dropzone" id="dropzone">
+        <input id="fileInput" type="file" multiple hidden />
+        <div class="drop-icon">⇧</div>
+        <strong>Trascina i file qui</strong>
+        <span>oppure clicca per selezionarli</span>
+      </label>
+
+      <div id="fileList" class="file-list"></div>
+      <div id="toolOptions" class="tool-options"></div>
+      <button class="primary-btn" id="processBtn" disabled>Avvia strumento</button>
+      <p class="small-note" id="statusText"></p>
+    </div>
+  </div>
+
+  <footer>
+    <div class="container footer-inner">
+      <div class="brand"><span class="brand-mark">PDF</span><span>Toolbox</span></div>
+      <p>© 2026 PDF Toolbox. Interfaccia originale ispirata ai moderni toolbox PDF.</p>
+    </div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs" type="module"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
