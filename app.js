@@ -8,6 +8,7 @@ const tools = [
   {id:'split', icon:'✂', name:'Dividi PDF', desc:'Separa pagine o intervalli di pagine.', accept:'.pdf'},
   {id:'compress', icon:'⇲', name:'Comprimi PDF', desc:'Riduci le dimensioni rasterizzando le pagine.', accept:'.pdf'},
   {id:'pdfjpg', icon:'▧', name:'PDF in JPG', desc:'Converti le pagine PDF in immagini JPG.', accept:'.pdf'},
+  {id:'pdftoword', icon:'W', name:'PDF in Word', desc:'Estrai il testo dal PDF e crea un documento Word modificabile.', accept:'.pdf'},
   {id:'jpgtopdf', icon:'▣', name:'JPG in PDF', desc:'Crea un PDF partendo dalle tue immagini.', accept:'image/jpeg,image/png,image/webp'},
   {id:'rotate', icon:'↻', name:'Ruota PDF', desc:'Ruota facilmente tutte le pagine.', accept:'.pdf'},
   {id:'protect', icon:'🔒', name:'Proteggi PDF', desc:'Aggiungi una password al documento.', accept:'.pdf'},
@@ -170,4 +171,81 @@ function updateThumbPositions(){
     const pos=el.querySelector('.thumb-pos');
     if(pos) pos.textContent=`#${i+1}`;
   });
+}
+
+
+async function pdfToWord(file){
+  try{
+    processBtn.disabled = true;
+    statusText.textContent = 'Estrazione testo e creazione Word...';
+
+    if(!window.pdfjsLib){
+      throw new Error('PDF.js non disponibile');
+    }
+    if(!window.docx){
+      throw new Error('Libreria DOCX non disponibile');
+    }
+
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
+    const paragraphs = [];
+
+    for(let p=1; p<=pdf.numPages; p++){
+      const page = await pdf.getPage(p);
+      const content = await page.getTextContent();
+
+      const lines = [];
+      let currentY = null;
+      let currentLine = [];
+
+      for(const item of content.items){
+        const y = Math.round(item.transform[5]);
+        if(currentY === null || Math.abs(y-currentY) <= 2){
+          currentLine.push(item.str);
+          currentY = currentY === null ? y : currentY;
+        }else{
+          lines.push(currentLine.join(' ').replace(/\s+/g,' ').trim());
+          currentLine = [item.str];
+          currentY = y;
+        }
+      }
+      if(currentLine.length) lines.push(currentLine.join(' ').replace(/\s+/g,' ').trim());
+
+      paragraphs.push(
+        new docx.Paragraph({
+          text: `Pagina ${p}`,
+          heading: docx.HeadingLevel.HEADING_2,
+          spacing: {after: 160}
+        })
+      );
+
+      for(const line of lines.filter(Boolean)){
+        paragraphs.push(new docx.Paragraph({text: line, spacing:{after:80}}));
+      }
+
+      if(p < pdf.numPages){
+        paragraphs.push(new docx.Paragraph({children:[new docx.PageBreak()]}));
+      }
+    }
+
+    const wordDoc = new docx.Document({
+      sections:[{properties:{}, children:paragraphs}]
+    });
+    const blob = await docx.Packer.toBlob(wordDoc);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = file.name.replace(/\.pdf$/i,'') + '.docx';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
+    statusText.textContent = 'Documento Word creato. Nota: viene preservato soprattutto il testo, non l’impaginazione complessa.';
+  }catch(err){
+    console.error(err);
+    statusText.textContent = 'Errore nella conversione PDF → Word.';
+  }finally{
+    processBtn.disabled = false;
+  }
 }

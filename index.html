@@ -4,15 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PIDIEFFE — Powered by RAdebug</title>
-  <meta name="description" content="Strumenti PDF online semplici e veloci." />
+  <meta name="description" content="PIDIEFFE — strumenti PDF online. Powered by RAdebug." />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header class="topbar">
     <div class="container nav">
       <a class="brand" href="#">
-        <span class="brand-mark">PDF</span>
-        <span>Toolbox</span>
+        <span class="brand-mark">P</span>
+        <span>PIDIEFFE</span>
       </a>
       <nav>
         <a href="#tools">Strumenti</a>
@@ -106,14 +106,23 @@
 
   <footer>
     <div class="container footer-inner">
-      <div class="brand"><span class="brand-mark">PDF</span><span>Toolbox</span></div>
+      <div class="brand"><span class="brand-mark">P</span><span>PIDIEFFE</span></div>
       <p>© 2026 PIDIEFFE — Powered by RAdebug</p>
     </div>
   </footer>
-
-  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs" type="module"></script>
-  <script type="module" src="app.js"></script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    if (window.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    }
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docx@9.5.1/dist/index.umd.js"></script>
+  <script src="app.js"></script>
+
 </body>
 </html>
