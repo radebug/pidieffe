@@ -1,7 +1,4 @@
-import * as pdfjsLib from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs';
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
-
-const { PDFDocument, degrees, rgb, StandardFonts } = PDFLib;
+const { PDFDocument, degrees, rgb, StandardFonts } = window.PDFLib || {};
 
 const tools = [
   {id:'merge', icon:'⧉', name:'Unisci PDF', desc:'Combina più PDF in un unico documento.', accept:'.pdf'},
@@ -69,10 +66,17 @@ function parsePageSpec(spec,max){
 }
 
 processBtn.onclick=async()=>{
-  if(!files.length)return; processBtn.disabled=true; statusText.textContent='Elaborazione in corso...';
+  if(!files.length)return;
+  const id=selectedTool.id;
+  const needsPdfLib=['merge','split','extract','rotate','watermark','number','organize'];
+  const needsPdfJs=['pdfjpg','compress','pdftoword'];
+  if(needsPdfLib.includes(id) && !window.PDFLib){statusText.textContent='Libreria PDF non caricata. Controlla la connessione internet e ricarica la pagina.';return;}
+  if(needsPdfJs.includes(id) && !window.pdfjsLib){statusText.textContent='Motore PDF non caricato. Controlla la connessione internet e ricarica la pagina.';return;}
+  if(id==='jpgtopdf' && !window.jspdf){statusText.textContent='Motore JPG→PDF non caricato. Controlla la connessione internet e ricarica la pagina.';return;}
+  if(id==='pdftoword' && !window.docx){statusText.textContent='Motore Word non caricato. Controlla la connessione internet e ricarica la pagina.';return;}
+  processBtn.disabled=true; statusText.textContent='Elaborazione in corso...';
   try{
-    const id=selectedTool.id;
-    if(id==='merge') await mergePDFs(); else if(id==='split') await splitPDF(); else if(id==='extract') await extractPDF(); else if(id==='rotate') await rotatePDF(); else if(id==='watermark') await watermarkPDF(); else if(id==='number') await numberPDF(); else if(id==='organize') await organizePDF(); else if(id==='jpgtopdf') await imagesToPdf(files); else if(id==='pdfjpg') await pdfToJpg(); else if(id==='compress') await compressPDF();
+    if(id==='merge') await mergePDFs(); else if(id==='split') await splitPDF(); else if(id==='extract') await extractPDF(); else if(id==='rotate') await rotatePDF(); else if(id==='watermark') await watermarkPDF(); else if(id==='number') await numberPDF(); else if(id==='organize') await organizePDF(); else if(id==='jpgtopdf') await imagesToPdf(files); else if(id==='pdfjpg') await pdfToJpg(); else if(id==='pdftoword') await pdfToWord(files[0]); else if(id==='compress') await compressPDF();
     statusText.textContent='Operazione completata.';
   }catch(err){console.error(err);statusText.textContent='Errore: '+(err.message||'operazione non riuscita');}
   finally{processBtn.disabled=false;}
@@ -86,8 +90,8 @@ async function watermarkPDF(){const doc=await PDFDocument.load(await ab(files[0]
 async function numberPDF(){const doc=await PDFDocument.load(await ab(files[0]));const font=await doc.embedFont(StandardFonts.Helvetica);const size=Number($('#numberSize').value)||11;const top=$('#numberPos').value==='top';doc.getPages().forEach((p,i)=>{const t=String(i+1),{width,height}=p.getSize(),tw=font.widthOfTextAtSize(t,size);p.drawText(t,{x:(width-tw)/2,y:top?height-25:18,size,font,color:rgb(.2,.2,.2)})});downloadBlob(await doc.save(),'pdf-numerato.pdf')}
 async function organizePDF(){const src=await PDFDocument.load(await ab(files[0]));const idx=pageOrderState.length?pageOrderState:[...Array(src.getPageCount())].map((_,i)=>i);if(idx.length!==src.getPageCount())throw Error('Anteprima pagine incompleta');const out=await PDFDocument.create();(await out.copyPages(src,idx)).forEach(p=>out.addPage(p));downloadBlob(await out.save(),'pdf-organizzato.pdf')}
 async function imagesToPdf(imgFiles){const {jsPDF}=window.jspdf;let pdf=null;for(let i=0;i<imgFiles.length;i++){const file=imgFiles[i],data=await readAsDataURL(file),dims=await getImageDimensions(data),land=dims.width>=dims.height,w=land?297:210,h=land?210:297;if(!pdf)pdf=new jsPDF({orientation:land?'landscape':'portrait',unit:'mm',format:'a4'});else pdf.addPage('a4',land?'landscape':'portrait');const ratio=Math.min(w/dims.width,h/dims.height),iw=dims.width*ratio,ih=dims.height*ratio;pdf.addImage(data,file.type.includes('png')?'PNG':'JPEG',(w-iw)/2,(h-ih)/2,iw,ih)}pdf.save('immagini-convertite.pdf')}
-async function pdfToJpg(){const data=new Uint8Array(await ab(files[0]));const pdf=await pdfjsLib.getDocument({data}).promise;for(let n=1;n<=pdf.numPages;n++){const page=await pdf.getPage(n),vp=page.getViewport({scale:1.8}),c=document.createElement('canvas');c.width=vp.width;c.height=vp.height;await page.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;const blob=await new Promise(r=>c.toBlob(r,'image/jpeg',.9));downloadBlob(blob,`pagina-${n}.jpg`,'image/jpeg')}}
-async function compressPDF(){const data=new Uint8Array(await ab(files[0]));const pdf=await pdfjsLib.getDocument({data}).promise;const {jsPDF}=window.jspdf;const quality=Number($('#quality').value),scale=Number($('#scale').value);let out=null;for(let n=1;n<=pdf.numPages;n++){const page=await pdf.getPage(n),vp=page.getViewport({scale}),c=document.createElement('canvas');c.width=vp.width;c.height=vp.height;await page.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;const img=c.toDataURL('image/jpeg',quality),land=vp.width>=vp.height,w=land?297:210,h=land?210:297;if(!out)out=new jsPDF({orientation:land?'landscape':'portrait',unit:'mm',format:'a4',compress:true});else out.addPage('a4',land?'landscape':'portrait');const r=Math.min(w/vp.width,h/vp.height),iw=vp.width*r,ih=vp.height*r;out.addImage(img,'JPEG',(w-iw)/2,(h-ih)/2,iw,ih,undefined,'FAST')}out.save('pdf-compresso.pdf')}
+async function pdfToJpg(){const data=new Uint8Array(await ab(files[0]));const pdf=await window.pdfjsLib.getDocument({data}).promise;for(let n=1;n<=pdf.numPages;n++){const page=await pdf.getPage(n),vp=page.getViewport({scale:1.8}),c=document.createElement('canvas');c.width=vp.width;c.height=vp.height;await page.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;const blob=await new Promise(r=>c.toBlob(r,'image/jpeg',.9));downloadBlob(blob,`pagina-${n}.jpg`,'image/jpeg')}}
+async function compressPDF(){const data=new Uint8Array(await ab(files[0]));const pdf=await window.pdfjsLib.getDocument({data}).promise;const {jsPDF}=window.jspdf;const quality=Number($('#quality').value),scale=Number($('#scale').value);let out=null;for(let n=1;n<=pdf.numPages;n++){const page=await pdf.getPage(n),vp=page.getViewport({scale}),c=document.createElement('canvas');c.width=vp.width;c.height=vp.height;await page.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;const img=c.toDataURL('image/jpeg',quality),land=vp.width>=vp.height,w=land?297:210,h=land?210:297;if(!out)out=new jsPDF({orientation:land?'landscape':'portrait',unit:'mm',format:'a4',compress:true});else out.addPage('a4',land?'landscape':'portrait');const r=Math.min(w/vp.width,h/vp.height),iw=vp.width*r,ih=vp.height*r;out.addImage(img,'JPEG',(w-iw)/2,(h-ih)/2,iw,ih,undefined,'FAST')}out.save('pdf-compresso.pdf')}
 function readAsDataURL(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(file)})}
 function getImageDimensions(src){return new Promise((res,rej)=>{const i=new Image();i.onload=()=>res({width:i.naturalWidth,height:i.naturalHeight});i.onerror=rej;i.src=src})}
 
@@ -100,7 +104,7 @@ async function maybeBuildPagePreview(){
   statusText.textContent='Genero l’anteprima delle pagine…';
   try{
     const data=new Uint8Array(await ab(files[0]));
-    const pdf=await pdfjsLib.getDocument({data}).promise;
+    const pdf=await window.pdfjsLib.getDocument({data}).promise;
     pageOrderState=[...Array(pdf.numPages)].map((_,i)=>i);
     host.innerHTML='';
     for(let n=1;n<=pdf.numPages;n++){
@@ -187,7 +191,7 @@ async function pdfToWord(file){
     }
 
     const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
+    const pdf = await window.pdfjsLib.getDocument({data: arrayBuffer}).promise;
     const paragraphs = [];
 
     for(let p=1; p<=pdf.numPages; p++){
