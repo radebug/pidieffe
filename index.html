@@ -80,7 +80,7 @@ footer{border-top:1px solid var(--line);padding:24px 0;color:var(--muted);font-s
 @media(max-width:560px){.tools-grid{grid-template-columns:1fr}.section{padding:40px 0}.hero{padding-top:55px}.modal-card{padding:25px 18px}.option-row{grid-template-columns:1fr}.footer-inner{flex-direction:column}h1{font-size:42px}}
 
 /* PDF editor */
-.editor-shell{display:grid;grid-template-columns:180px minmax(0,1fr);gap:14px;margin-top:14px}
+.editor-shell{display:grid;grid-template-columns:190px minmax(0,1fr);gap:14px;margin-top:14px}.modal.edit-mode .modal-card{width:100%;max-width:none;height:100vh;max-height:none;border-radius:0;margin:0;display:flex;flex-direction:column}.modal.edit-mode .modal-body{flex:1;overflow:hidden;display:flex;flex-direction:column}.modal.edit-mode #toolOptions{flex:1;overflow:hidden;display:flex;flex-direction:column}.modal.edit-mode #pdfEditorMount{flex:1;overflow:hidden;display:flex;flex-direction:column}.modal.edit-mode .editor-shell{flex:1;min-height:0}.modal.edit-mode .editor-stage-wrap{max-height:none;height:100%;overflow:auto}.modal.edit-mode .editor-pages{max-height:none;height:100%;overflow:auto}
 .editor-sidebar{min-width:0;display:flex;flex-direction:column;gap:8px}
 .editor-toolbar{display:flex;flex-wrap:wrap;gap:7px;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--bg)}
 .editor-toolbar button{min-height:40px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--text);padding:8px 10px;font-weight:700;cursor:pointer}
@@ -102,6 +102,13 @@ footer{border-top:1px solid var(--line);padding:24px 0;color:var(--muted);font-s
 .editor-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .editor-actions button{flex:1;min-width:130px}
 @media(max-width:720px){.editor-shell{grid-template-columns:1fr}.editor-pages{flex-direction:row;max-height:none;overflow:auto}.editor-page-btn{min-width:90px}.editor-stage-wrap{max-height:520px}}
+
+
+.editor-text-layer{position:absolute;inset:0;pointer-events:none}
+.editor-existing-text{position:absolute;transform-origin:0 0;white-space:pre;pointer-events:auto;cursor:text;border:1px dashed transparent;padding:0 1px;min-width:4px;min-height:10px;background:transparent;outline:none;line-height:1}
+.editor-existing-text:hover{border-color:rgba(217,65,58,.45);background:rgba(255,255,255,.35)}
+.editor-existing-text:focus{border-color:var(--accent);background:rgba(255,255,255,.85);z-index:4}
+.editor-existing-text.changed{border-color:rgba(46,125,50,.55);background:rgba(255,255,255,.82)}
 
 </style>
 </head>
@@ -138,7 +145,7 @@ footer{border-top:1px solid var(--line);padding:24px 0;color:var(--muted);font-s
     <button class="tool-card" data-id="number" data-search="numeri pagina pdf numerazione"><span class="tool-arrow">↗</span><div class="tool-icon">#</div><h3>Numeri di pagina</h3><p>Inserisci numeri di pagina nel PDF.</p></button>
     <button class="tool-card" data-id="watermark" data-search="filigrana watermark pdf"><span class="tool-arrow">↗</span><div class="tool-icon">◇</div><h3>Filigrana</h3><p>Aggiungi testo come filigrana.</p></button>
     <button class="tool-card" data-id="extract" data-search="estrai pagine pdf"><span class="tool-arrow">↗</span><div class="tool-icon">⇱</div><h3>Estrai pagine</h3><p>Crea un nuovo PDF con le pagine selezionate.</p></button>
-    <button class="tool-card" data-id="edit" data-search="modifica edit pdf testo evidenzia disegna correggi"><span class="tool-arrow">↗</span><div class="tool-icon">✎</div><h3>Modifica PDF</h3><p>Modifica il PDF direttamente nel browser.</p></button>
+    <button class="tool-card" data-id="edit" data-search="modifica edit pdf testo evidenzia disegna correggi"><span class="tool-arrow">↗</span><div class="tool-icon">✎</div><h3>Modifica PDF</h3><p>Modifica testo esistente, aggiungi testo, evidenzia e disegna.</p></button>
     <button class="tool-card" data-id="organize" data-search="organizza riordina pagine pdf miniature drag drop"><span class="tool-arrow">↗</span><div class="tool-icon">☷</div><h3>Organizza PDF</h3><p>Riordina le pagine con miniature e drag & drop.</p></button>
     <button class="tool-card disabled" data-id="protect" data-search="proteggi pdf password"><span class="tool-arrow">↗</span><div class="tool-icon">🔒</div><h3>Proteggi PDF</h3><p>Interfaccia pronta per il backend di cifratura.</p></button>
     <button class="tool-card disabled" data-id="unlock" data-search="sblocca pdf password"><span class="tool-arrow">↗</span><div class="tool-icon">🔓</div><h3>Sblocca PDF</h3><p>Interfaccia pronta per il backend di decifratura.</p></button>
@@ -213,7 +220,7 @@ const meta={
  number:{icon:"#",name:"Numeri di pagina",desc:"Inserisci numeri di pagina nel PDF.",accept:".pdf"},
  watermark:{icon:"◇",name:"Filigrana",desc:"Aggiungi testo come filigrana.",accept:".pdf"},
  extract:{icon:"⇱",name:"Estrai pagine",desc:"Crea un nuovo PDF con le pagine selezionate.",accept:".pdf"},
- edit:{icon:"✎",name:"Modifica PDF",desc:"Aggiungi testo, evidenzia, disegna e correggi direttamente nel browser.",accept:".pdf"},
+ edit:{icon:"✎",name:"Modifica PDF",desc:"Modifica il testo esistente, aggiungi testo, evidenzia e disegna direttamente nel browser.",accept:".pdf"},
  organize:{icon:"☷",name:"Organizza PDF",desc:"Riordina le pagine con miniature e drag & drop.",accept:".pdf"},
  protect:{icon:"🔒",name:"Proteggi PDF",desc:"Funzione che richiede backend.",accept:".pdf"},
  unlock:{icon:"🔓",name:"Sblocca PDF",desc:"Funzione che richiede backend.",accept:".pdf"}
@@ -249,6 +256,7 @@ function openTool(id){
  $("#modalIcon").textContent=selectedTool.icon; $("#modalTitle").textContent=selectedTool.name; $("#modalDesc").textContent=selectedTool.desc;
  toolOptions.innerHTML=optionHtml(id);
  statusText.textContent=["protect","unlock"].includes(id)?"Questa funzione richiede un backend.":"Elaborazione locale nel browser.";
+ modal.classList.toggle("edit-mode",id==="edit");
  modal.classList.add("show"); modal.setAttribute("aria-hidden","false");
 }
 $$(".tool-card").forEach(card=>card.addEventListener("click",()=>openTool(card.dataset.id)));
@@ -264,7 +272,7 @@ document.addEventListener("change",e=>{
 });
 
 
-$("#modalClose").onclick=()=>{modal.classList.remove("show");files=[];pageOrderState=[];editorState=null;processBtn.style.display=""};
+$("#modalClose").onclick=()=>{modal.classList.remove("show","edit-mode");files=[];pageOrderState=[];editorState=null;processBtn.style.display=""};
 modal.addEventListener("click",e=>{if(e.target===modal)$("#modalClose").click()});
 
 $("#toolSearch").addEventListener("input",e=>{
@@ -340,11 +348,11 @@ async function initPdfEditor(file){
  mount.innerHTML='<div class="thumb-empty">Apertura PDF...</div>';
  const bytes=new Uint8Array(await ab(file));
  const pdf=await pdfjsLib.getDocument({data:bytes.slice()}).promise;
- editorState={file,bytes,pdf,page:1,scale:1.25,tool:"text",color:"#d9413a",fontSize:18,stroke:3,ops:{},undo:[]};
- for(let i=1;i<=pdf.numPages;i++)editorState.ops[i]=[];
+ editorState={file,bytes,pdf,page:1,scale:1.25,tool:"edittext",color:"#d9413a",fontSize:18,stroke:3,ops:{},undo:[],textEdits:{}};
+ for(let i=1;i<=pdf.numPages;i++){editorState.ops[i]=[];editorState.textEdits[i]=[];}
  mount.innerHTML=`
   <div class="editor-toolbar" aria-label="Strumenti modifica PDF">
-   <button type="button" data-editor-tool="text" class="active">T Testo</button>
+   <button type="button" data-editor-tool="edittext" class="active">Aa Modifica testo</button><button type="button" data-editor-tool="text">T Nuovo testo</button>
    <button type="button" data-editor-tool="whiteout">▭ Correggi</button>
    <button type="button" data-editor-tool="highlight">▰ Evidenzia</button>
    <button type="button" data-editor-tool="draw">✎ Disegna</button>
@@ -362,13 +370,14 @@ async function initPdfEditor(file){
     <div class="editor-stage-wrap">
      <div class="editor-stage" id="editorStage">
       <canvas id="editorPdfCanvas"></canvas>
+      <div id="editorTextLayer" class="editor-text-layer"></div>
       <canvas id="editorOverlay" class="editor-overlay"></canvas>
      </div>
     </div>
     <div class="editor-actions">
      <button type="button" class="primary-btn" id="editorSave">Salva PDF</button>
     </div>
-    <p class="editor-note">“Correggi” copre una parte del PDF con un rettangolo bianco; poi puoi inserire nuovo testo sopra. Le modifiche non vengono caricate su un server.</p>
+    <p class="editor-note">Con “Modifica testo” puoi cliccare direttamente sul testo esistente e riscriverlo. Al salvataggio PIDIEFFE sostituisce visivamente il testo nella stessa posizione. Le modifiche restano nel browser.</p>
    </div>
   </div>`;
  await buildEditorThumbs();
@@ -394,6 +403,10 @@ function bindEditorControls(){
  $$("[data-editor-tool]").forEach(b=>b.addEventListener("click",()=>{
   editorState.tool=b.dataset.editorTool;
   $$("[data-editor-tool]").forEach(x=>x.classList.toggle("active",x===b));
+  const ov=$("#editorOverlay"),tl=$("#editorTextLayer");
+  const editing=editorState.tool==="edittext";
+  if(ov)ov.style.pointerEvents=editing?"none":"auto";
+  if(tl)tl.style.pointerEvents=editing?"auto":"none";
  }));
  $("#editorColor").addEventListener("input",e=>editorState.color=e.target.value);
  $("#editorFontSize").addEventListener("input",e=>editorState.fontSize=Math.max(8,Math.min(72,Number(e.target.value)||18)));
@@ -462,8 +475,57 @@ async function renderEditorPage(){
  c.style.width=o.style.width=vp.width+"px";c.style.height=o.style.height=vp.height+"px";
  stage.style.width=vp.width+"px";stage.style.height=vp.height+"px";
  await page.render({canvasContext:c.getContext("2d"),viewport:vp}).promise;
+ await buildEditableTextLayer(page,vp);
  $$(".editor-page-btn").forEach(b=>b.classList.toggle("active",Number(b.dataset.page)===editorState.page));
+ const editing=editorState.tool==="edittext";o.style.pointerEvents=editing?"none":"auto";$("#editorTextLayer").style.pointerEvents=editing?"auto":"none";
  await drawEditorOverlay();
+}
+
+
+async function buildEditableTextLayer(page,vp){
+ const layer=$("#editorTextLayer"); if(!layer)return;
+ layer.innerHTML="";
+ const content=await page.getTextContent();
+ const stored=editorState.textEdits[editorState.page]||[];
+ let idx=0;
+ for(const item of content.items){
+  if(!item.str || !item.str.trim())continue;
+  const tx=pdfjsLib.Util.transform(vp.transform,item.transform);
+  const fontHeight=Math.hypot(tx[2],tx[3]);
+  const angle=Math.atan2(tx[1],tx[0]);
+  const left=tx[4], top=tx[5]-fontHeight;
+  const width=Math.max(4,(item.width||0)*editorState.scale);
+  const id=idx++;
+  const saved=stored.find(x=>x.id===id);
+  const div=document.createElement("div");
+  div.className="editor-existing-text"+(saved&&saved.text!==item.str?" changed":"");
+  div.contentEditable="true";
+  div.spellcheck=false;
+  div.dataset.textId=String(id);
+  div.dataset.original=item.str;
+  div.textContent=saved?saved.text:item.str;
+  div.style.left=left+"px";
+  div.style.top=top+"px";
+  div.style.fontSize=fontHeight+"px";
+  div.style.fontFamily="Arial, sans-serif";
+  div.style.transform=`rotate(${angle}rad)`;
+  div.style.minWidth=Math.max(8,width)+"px";
+  div.style.height=Math.max(12,fontHeight*1.15)+"px";
+  div.addEventListener("input",()=>{
+    const text=div.innerText.replace(/\n/g," ");
+    const rec={
+      id,original:item.str,text,
+      x:left,y:top,w:Math.max(width,div.getBoundingClientRect().width),
+      h:Math.max(fontHeight*1.15,div.getBoundingClientRect().height),
+      size:fontHeight,angle
+    };
+    const arr=editorState.textEdits[editorState.page];
+    const pos=arr.findIndex(x=>x.id===id);
+    if(pos>=0)arr[pos]=rec; else arr.push(rec);
+    div.classList.toggle("changed",text!==item.str);
+  });
+  layer.appendChild(div);
+ }
 }
 
 async function drawEditorOverlay(preview=null){
@@ -491,9 +553,27 @@ async function saveEditedPdf(){
  const doc=await PDFDocument.load(editorState.bytes.slice());
  const font=await doc.embedFont(StandardFonts.Helvetica);
  for(let p=1;p<=doc.getPageCount();p++){
-  const page=doc.getPage(p-1),ops=editorState.ops[p]||[];
+  const page=doc.getPage(p-1),ops=editorState.ops[p]||[],textEdits=editorState.textEdits[p]||[];
   const pdfPage=await editorState.pdf.getPage(p),vp=pdfPage.getViewport({scale:editorState.scale});
   const {width:pw,height:ph}=page.getSize(),sx=pw/vp.width,sy=ph/vp.height;
+  for(const ed of textEdits){
+   if(ed.text===ed.original)continue;
+   page.drawRectangle({
+    x:ed.x*sx,
+    y:ph-(ed.y+ed.h)*sy,
+    width:Math.max(1,ed.w*sx),
+    height:Math.max(1,ed.h*sy),
+    color:rgb(1,1,1)
+   });
+   const fs=Math.max(5,ed.size*sy);
+   page.drawText(ed.text||"",{
+    x:ed.x*sx,
+    y:ph-(ed.y*sy)-fs,
+    size:fs,
+    font,
+    color:rgb(0,0,0)
+   });
+  }
   for(const op of ops){
    if(op.type==="whiteout"){
     page.drawRectangle({x:op.x*sx,y:ph-(op.y+op.h)*sy,width:op.w*sx,height:op.h*sy,color:rgb(1,1,1)});
