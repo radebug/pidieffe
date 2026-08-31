@@ -78,6 +78,31 @@ footer{border-top:1px solid var(--line);padding:24px 0;color:var(--muted);font-s
 .hidden{display:none!important}
 @media(max-width:900px){.tools-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:560px){.tools-grid{grid-template-columns:1fr}.section{padding:40px 0}.hero{padding-top:55px}.modal-card{padding:25px 18px}.option-row{grid-template-columns:1fr}.footer-inner{flex-direction:column}h1{font-size:42px}}
+
+/* PDF editor */
+.editor-shell{display:grid;grid-template-columns:180px minmax(0,1fr);gap:14px;margin-top:14px}
+.editor-sidebar{min-width:0;display:flex;flex-direction:column;gap:8px}
+.editor-toolbar{display:flex;flex-wrap:wrap;gap:7px;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--bg)}
+.editor-toolbar button{min-height:40px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--text);padding:8px 10px;font-weight:700;cursor:pointer}
+.editor-toolbar button.active{border-color:var(--accent);background:rgba(217,65,58,.08);color:var(--accent)}
+.editor-toolbar input[type="number"]{width:70px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--text);padding:8px}
+.editor-toolbar input[type="color"]{width:42px;height:40px;border:1px solid var(--line);border-radius:9px;background:var(--surface);padding:4px}
+.editor-pages{display:flex;flex-direction:column;gap:8px;max-height:560px;overflow:auto;padding-right:3px}
+.editor-page-btn{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:7px;cursor:pointer;color:var(--text)}
+.editor-page-btn.active{border-color:var(--accent)}
+.editor-page-btn canvas{width:100%;height:auto;display:block;border-radius:5px;background:#fff}
+.editor-page-btn span{display:block;font-size:11px;color:var(--muted);margin-top:5px;text-align:center}
+.editor-stage-wrap{min-width:0;overflow:auto;border:1px solid var(--line);border-radius:12px;background:#d9dce3;padding:14px;max-height:650px}
+.editor-stage{position:relative;margin:auto;width:max-content;background:#fff;box-shadow:0 4px 16px rgba(0,0,0,.12);touch-action:none}
+.editor-stage canvas{display:block}
+.editor-overlay{position:absolute;inset:0;cursor:crosshair}
+.editor-textbox{position:absolute;min-width:30px;min-height:22px;padding:1px 3px;border:1px dashed transparent;outline:none;white-space:pre-wrap;overflow:visible;background:transparent;line-height:1.15}
+.editor-textbox:focus{border-color:var(--accent);background:rgba(255,255,255,.75)}
+.editor-note{font-size:11px;color:var(--muted);line-height:1.45}
+.editor-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.editor-actions button{flex:1;min-width:130px}
+@media(max-width:720px){.editor-shell{grid-template-columns:1fr}.editor-pages{flex-direction:row;max-height:none;overflow:auto}.editor-page-btn{min-width:90px}.editor-stage-wrap{max-height:520px}}
+
 </style>
 </head>
 <body>
@@ -99,7 +124,7 @@ footer{border-top:1px solid var(--line);padding:24px 0;color:var(--muted);font-s
 </section>
 
 <section class="container section">
-  <div class="section-head"><h2>Strumenti</h2><span id="toolCount">13 strumenti</span></div>
+  <div class="section-head"><h2>Strumenti</h2><span id="toolCount">14 strumenti</span></div>
 
   <!-- Le card sono nell'HTML: compaiono anche se JavaScript/CDN non si caricano -->
   <div class="tools-grid" id="toolsGrid">
@@ -113,6 +138,7 @@ footer{border-top:1px solid var(--line);padding:24px 0;color:var(--muted);font-s
     <button class="tool-card" data-id="number" data-search="numeri pagina pdf numerazione"><span class="tool-arrow">↗</span><div class="tool-icon">#</div><h3>Numeri di pagina</h3><p>Inserisci numeri di pagina nel PDF.</p></button>
     <button class="tool-card" data-id="watermark" data-search="filigrana watermark pdf"><span class="tool-arrow">↗</span><div class="tool-icon">◇</div><h3>Filigrana</h3><p>Aggiungi testo come filigrana.</p></button>
     <button class="tool-card" data-id="extract" data-search="estrai pagine pdf"><span class="tool-arrow">↗</span><div class="tool-icon">⇱</div><h3>Estrai pagine</h3><p>Crea un nuovo PDF con le pagine selezionate.</p></button>
+    <button class="tool-card" data-id="edit" data-search="modifica edit pdf testo evidenzia disegna correggi"><span class="tool-arrow">↗</span><div class="tool-icon">✎</div><h3>Modifica PDF</h3><p>Modifica il PDF direttamente nel browser.</p></button>
     <button class="tool-card" data-id="organize" data-search="organizza riordina pagine pdf miniature drag drop"><span class="tool-arrow">↗</span><div class="tool-icon">☷</div><h3>Organizza PDF</h3><p>Riordina le pagine con miniature e drag & drop.</p></button>
     <button class="tool-card disabled" data-id="protect" data-search="proteggi pdf password"><span class="tool-arrow">↗</span><div class="tool-icon">🔒</div><h3>Proteggi PDF</h3><p>Interfaccia pronta per il backend di cifratura.</p></button>
     <button class="tool-card disabled" data-id="unlock" data-search="sblocca pdf password"><span class="tool-arrow">↗</span><div class="tool-icon">🔓</div><h3>Sblocca PDF</h3><p>Interfaccia pronta per il backend di decifratura.</p></button>
@@ -174,6 +200,7 @@ const $=s=>document.querySelector(s);
 const $$=s=>[...document.querySelectorAll(s)];
 const modal=$("#toolModal"),fileInput=$("#fileInput"),dropzone=$("#dropzone"),fileList=$("#fileList"),processBtn=$("#processBtn"),statusText=$("#statusText"),toolOptions=$("#toolOptions");
 let selectedTool=null, files=[], pageOrderState=[];
+let editorState=null;
 
 const meta={
  merge:{icon:"⧉",name:"Unisci PDF",desc:"Combina più PDF in un unico documento.",accept:".pdf"},
@@ -186,6 +213,7 @@ const meta={
  number:{icon:"#",name:"Numeri di pagina",desc:"Inserisci numeri di pagina nel PDF.",accept:".pdf"},
  watermark:{icon:"◇",name:"Filigrana",desc:"Aggiungi testo come filigrana.",accept:".pdf"},
  extract:{icon:"⇱",name:"Estrai pagine",desc:"Crea un nuovo PDF con le pagine selezionate.",accept:".pdf"},
+ edit:{icon:"✎",name:"Modifica PDF",desc:"Aggiungi testo, evidenzia, disegna e correggi direttamente nel browser.",accept:".pdf"},
  organize:{icon:"☷",name:"Organizza PDF",desc:"Riordina le pagine con miniature e drag & drop.",accept:".pdf"},
  protect:{icon:"🔒",name:"Proteggi PDF",desc:"Funzione che richiede backend.",accept:".pdf"},
  unlock:{icon:"🔓",name:"Sblocca PDF",desc:"Funzione che richiede backend.",accept:".pdf"}
@@ -197,13 +225,26 @@ function optionHtml(id){
  if(id==="watermark") return '<label>Testo filigrana<input id="watermarkText" value="CONFIDENTIAL"></label><div class="option-row"><label>Dimensione<input id="watermarkSize" type="number" value="48" min="10" max="120"></label><label>Opacità<input id="watermarkOpacity" type="number" value="0.18" min=".05" max="1" step=".05"></label></div>';
  if(id==="number") return '<div class="option-row"><label>Posizione<select id="numberPos"><option value="bottom">In basso</option><option value="top">In alto</option></select></label><label>Dimensione<input id="numberSize" type="number" value="11" min="6" max="30"></label></div>';
  if(id==="compress") return '<div class="option-row"><label>Qualità JPG<select id="quality"><option value=".55">Alta compressione</option><option value=".72" selected>Bilanciata</option><option value=".88">Alta qualità</option></select></label><label>Risoluzione<select id="scale"><option value="1">Standard</option><option value="1.4" selected>Buona</option><option value="2">Alta</option></select></label></div><div class="warning-box">La compressione rasterizza le pagine: il testo non rimane selezionabile.</div>';
+ if(id==="pdftoword") return `
+ <label>Modalità conversione
+  <select id="wordMode">
+   <option value="layout" selected>Mantieni layout</option>
+   <option value="editable">Documento modificabile</option>
+  </select>
+ </label>
+ <div class="warning-box" id="wordModeHelp">
+  <strong>Mantieni layout:</strong> il Word avrà lo stesso aspetto del PDF, inserendo ogni pagina come immagine ad alta qualità.
+ </div>`;
+ if(id==="edit") return `
+ <div class="editor-note">Carica un PDF. Le modifiche restano nel browser fino a quando premi <strong>Salva PDF</strong>.</div>
+ <div id="pdfEditorMount"><div class="thumb-empty">Carica un PDF per iniziare a modificarlo.</div></div>`;
  if(id==="organize") return '<div class="organize-help"><strong>Trascina le miniature</strong><span>Il numero indicato è quello della pagina originale.</span></div><div id="pageThumbs" class="page-thumbs"><div class="thumb-empty">Carica un PDF per vedere le miniature.</div></div>';
  if(["protect","unlock"].includes(id)) return '<div class="warning-box"><strong>Richiede backend.</strong> La cifratura/decifratura PDF non viene simulata nel browser.</div>';
  return "";
 }
 
 function openTool(id){
- selectedTool=meta[id]; selectedTool.id=id; files=[]; pageOrderState=[];
+ selectedTool=meta[id]; selectedTool.id=id; files=[]; pageOrderState=[]; editorState=null;
  fileInput.value=""; fileInput.accept=selectedTool.accept; refreshFiles();
  $("#modalIcon").textContent=selectedTool.icon; $("#modalTitle").textContent=selectedTool.name; $("#modalDesc").textContent=selectedTool.desc;
  toolOptions.innerHTML=optionHtml(id);
@@ -212,7 +253,18 @@ function openTool(id){
 }
 $$(".tool-card").forEach(card=>card.addEventListener("click",()=>openTool(card.dataset.id)));
 
-$("#modalClose").onclick=()=>{modal.classList.remove("show");files=[];pageOrderState=[]};
+document.addEventListener("change",e=>{
+ if(e.target && e.target.id==="wordMode"){
+  const help=$("#wordModeHelp");
+  if(!help)return;
+  help.innerHTML=e.target.value==="layout"
+   ? "<strong>Mantieni layout:</strong> il Word avrà lo stesso aspetto del PDF, inserendo ogni pagina come immagine ad alta qualità."
+   : "<strong>Documento modificabile:</strong> estrae il testo e prova a mantenere dimensioni, grassetto e corsivo. Tabelle e layout complessi possono cambiare.";
+ }
+});
+
+
+$("#modalClose").onclick=()=>{modal.classList.remove("show");files=[];pageOrderState=[];editorState=null;processBtn.style.display=""};
 modal.addEventListener("click",e=>{if(e.target===modal)$("#modalClose").click()});
 
 $("#toolSearch").addEventListener("input",e=>{
@@ -225,13 +277,13 @@ $("#themeBtn").onclick=()=>{document.body.classList.toggle("dark");localStorage.
 if(localStorage.getItem("pidieffe-theme")==="dark")document.body.classList.add("dark");
 
 function prettySize(b){return b<1024?b+" B":b<1048576?(b/1024).toFixed(1)+" KB":(b/1048576).toFixed(1)+" MB"}
-function refreshFiles(){fileList.innerHTML=files.map(f=>'<div class="file-item"><span>'+esc(f.name)+'</span><span>'+prettySize(f.size)+'</span></div>').join("");processBtn.disabled=!files.length||["protect","unlock"].includes(selectedTool?.id)}
+function refreshFiles(){fileList.innerHTML=files.map(f=>'<div class="file-item"><span>'+esc(f.name)+'</span><span>'+prettySize(f.size)+'</span></div>').join("");processBtn.disabled=!files.length||["protect","unlock","edit"].includes(selectedTool?.id);processBtn.style.display=selectedTool?.id==="edit"?"none":""}
 function esc(s){const d=document.createElement("div");d.textContent=s;return d.innerHTML}
 
-fileInput.addEventListener("change",async e=>{files=[...e.target.files];refreshFiles();await maybePreview()});
+fileInput.addEventListener("change",async e=>{files=[...e.target.files];refreshFiles();await maybePreview();if(selectedTool?.id==="edit"&&files[0])await initPdfEditor(files[0])});
 ["dragenter","dragover"].forEach(ev=>dropzone.addEventListener(ev,e=>{e.preventDefault();dropzone.classList.add("drag")}));
 ["dragleave","drop"].forEach(ev=>dropzone.addEventListener(ev,e=>{e.preventDefault();dropzone.classList.remove("drag")}));
-dropzone.addEventListener("drop",async e=>{files=[...e.dataTransfer.files];refreshFiles();await maybePreview()});
+dropzone.addEventListener("drop",async e=>{files=[...e.dataTransfer.files];refreshFiles();await maybePreview();if(selectedTool?.id==="edit"&&files[0])await initPdfEditor(files[0])});
 
 function need(lib,msg){if(!lib){statusText.textContent=msg;return false}return true}
 async function ab(f){return await f.arrayBuffer()}
@@ -258,6 +310,7 @@ processBtn.onclick=async()=>{
   else if(id==="pdfjpg")await pdfToJpg();
   else if(id==="compress")await compressPDF();
   else if(id==="pdftoword")await pdfToWord();
+  else if(id==="edit")return;
   statusText.textContent="Operazione completata.";
  }catch(err){console.error(err);statusText.textContent="Errore: "+(err.message||"operazione non riuscita")}
  finally{processBtn.disabled=false}
@@ -275,6 +328,194 @@ function dims(src){return new Promise((res,rej)=>{const i=new Image;i.onload=()=
 async function imagesToPdf(){const {jsPDF}=jspdf;let pdf=null;for(const f of files){const data=await dataURL(f),d=await dims(data),land=d.w>=d.h,w=land?297:210,h=land?210:297;if(!pdf)pdf=new jsPDF({orientation:land?"landscape":"portrait",unit:"mm",format:"a4"});else pdf.addPage("a4",land?"landscape":"portrait");const r=Math.min(w/d.w,h/d.h),iw=d.w*r,ih=d.h*r;pdf.addImage(data,f.type.includes("png")?"PNG":"JPEG",(w-iw)/2,(h-ih)/2,iw,ih)}pdf.save("immagini-convertite.pdf")}
 async function pdfToJpg(){const pdf=await pdfjsLib.getDocument({data:new Uint8Array(await ab(files[0]))}).promise;for(let n=1;n<=pdf.numPages;n++){const p=await pdf.getPage(n),vp=p.getViewport({scale:1.8}),c=document.createElement("canvas");c.width=vp.width;c.height=vp.height;await p.render({canvasContext:c.getContext("2d"),viewport:vp}).promise;const blob=await new Promise(r=>c.toBlob(r,"image/jpeg",.9));download(blob,"pagina-"+n+".jpg","image/jpeg")}}
 async function compressPDF(){const pdf=await pdfjsLib.getDocument({data:new Uint8Array(await ab(files[0]))}).promise,{jsPDF}=jspdf,q=Number($("#quality").value),scale=Number($("#scale").value);let out=null;for(let n=1;n<=pdf.numPages;n++){const p=await pdf.getPage(n),vp=p.getViewport({scale}),c=document.createElement("canvas");c.width=vp.width;c.height=vp.height;await p.render({canvasContext:c.getContext("2d"),viewport:vp}).promise;const img=c.toDataURL("image/jpeg",q),land=vp.width>=vp.height,w=land?297:210,h=land?210:297;if(!out)out=new jsPDF({orientation:land?"landscape":"portrait",unit:"mm",format:"a4",compress:true});else out.addPage("a4",land?"landscape":"portrait");const r=Math.min(w/vp.width,h/vp.height),iw=vp.width*r,ih=vp.height*r;out.addImage(img,"JPEG",(w-iw)/2,(h-ih)/2,iw,ih,undefined,"FAST")}out.save("pdf-compresso.pdf")}
+
+
+async function initPdfEditor(file){
+ const mount=$("#pdfEditorMount");
+ if(!mount)return;
+ if(!window.pdfjsLib||!window.PDFLib){
+  mount.innerHTML='<div class="warning-box">Motore PDF non disponibile. Ricarica la pagina e riprova.</div>';
+  return;
+ }
+ mount.innerHTML='<div class="thumb-empty">Apertura PDF...</div>';
+ const bytes=new Uint8Array(await ab(file));
+ const pdf=await pdfjsLib.getDocument({data:bytes.slice()}).promise;
+ editorState={file,bytes,pdf,page:1,scale:1.25,tool:"text",color:"#d9413a",fontSize:18,stroke:3,ops:{},undo:[]};
+ for(let i=1;i<=pdf.numPages;i++)editorState.ops[i]=[];
+ mount.innerHTML=`
+  <div class="editor-toolbar" aria-label="Strumenti modifica PDF">
+   <button type="button" data-editor-tool="text" class="active">T Testo</button>
+   <button type="button" data-editor-tool="whiteout">▭ Correggi</button>
+   <button type="button" data-editor-tool="highlight">▰ Evidenzia</button>
+   <button type="button" data-editor-tool="draw">✎ Disegna</button>
+   <label title="Colore"><input id="editorColor" type="color" value="#d9413a" aria-label="Colore"></label>
+   <label title="Dimensione testo"><input id="editorFontSize" type="number" value="18" min="8" max="72" aria-label="Dimensione testo"></label>
+   <button type="button" id="editorUndo">↶ Annulla</button>
+   <button type="button" id="editorClear">Pulisci pagina</button>
+  </div>
+  <div class="editor-shell">
+   <aside class="editor-sidebar">
+    <strong style="font-size:13px">Pagine</strong>
+    <div class="editor-pages" id="editorPages"></div>
+   </aside>
+   <div>
+    <div class="editor-stage-wrap">
+     <div class="editor-stage" id="editorStage">
+      <canvas id="editorPdfCanvas"></canvas>
+      <canvas id="editorOverlay" class="editor-overlay"></canvas>
+     </div>
+    </div>
+    <div class="editor-actions">
+     <button type="button" class="primary-btn" id="editorSave">Salva PDF</button>
+    </div>
+    <p class="editor-note">“Correggi” copre una parte del PDF con un rettangolo bianco; poi puoi inserire nuovo testo sopra. Le modifiche non vengono caricate su un server.</p>
+   </div>
+  </div>`;
+ await buildEditorThumbs();
+ bindEditorControls();
+ await renderEditorPage();
+}
+
+async function buildEditorThumbs(){
+ const host=$("#editorPages"); if(!host||!editorState)return;
+ host.innerHTML="";
+ for(let n=1;n<=editorState.pdf.numPages;n++){
+  const page=await editorState.pdf.getPage(n),vp=page.getViewport({scale:.18});
+  const c=document.createElement("canvas");c.width=Math.ceil(vp.width);c.height=Math.ceil(vp.height);
+  await page.render({canvasContext:c.getContext("2d"),viewport:vp}).promise;
+  const b=document.createElement("button");b.type="button";b.className="editor-page-btn"+(n===editorState.page?" active":"");b.dataset.page=n;
+  b.appendChild(c);const s=document.createElement("span");s.textContent="Pagina "+n;b.appendChild(s);
+  b.addEventListener("click",async()=>{editorState.page=n;await renderEditorPage();});
+  host.appendChild(b);
+ }
+}
+
+function bindEditorControls(){
+ $$("[data-editor-tool]").forEach(b=>b.addEventListener("click",()=>{
+  editorState.tool=b.dataset.editorTool;
+  $$("[data-editor-tool]").forEach(x=>x.classList.toggle("active",x===b));
+ }));
+ $("#editorColor").addEventListener("input",e=>editorState.color=e.target.value);
+ $("#editorFontSize").addEventListener("input",e=>editorState.fontSize=Math.max(8,Math.min(72,Number(e.target.value)||18)));
+ $("#editorUndo").addEventListener("click",async()=>{
+  const arr=editorState.ops[editorState.page];
+  if(arr.length){arr.pop();await drawEditorOverlay();}
+ });
+ $("#editorClear").addEventListener("click",async()=>{
+  editorState.ops[editorState.page]=[];
+  await drawEditorOverlay();
+ });
+ $("#editorSave").addEventListener("click",saveEditedPdf);
+ const overlay=$("#editorOverlay");
+ let drawing=false,start=null,current=null;
+ overlay.addEventListener("pointerdown",e=>{
+  if(editorState.tool==="text"){placeEditorText(e);return}
+  drawing=true;overlay.setPointerCapture(e.pointerId);start=editorPoint(e);current={points:[start]};
+ });
+ overlay.addEventListener("pointermove",e=>{
+  if(!drawing)return;
+  const p=editorPoint(e);
+  if(editorState.tool==="draw")current.points.push(p);else current.end=p;
+  drawEditorOverlay(current);
+ });
+ overlay.addEventListener("pointerup",async e=>{
+  if(!drawing)return;drawing=false;
+  const p=editorPoint(e);
+  if(editorState.tool==="draw"){
+   if(current.points.length<2)current.points.push(p);
+   editorState.ops[editorState.page].push({type:"draw",points:current.points,color:editorState.color,width:editorState.stroke});
+  }else if(editorState.tool==="whiteout"){
+   editorState.ops[editorState.page].push(rectOp("whiteout",start,p));
+  }else if(editorState.tool==="highlight"){
+   const op=rectOp("highlight",start,p);op.color=editorState.color;editorState.ops[editorState.page].push(op);
+  }
+  current=null;await drawEditorOverlay();
+ });
+}
+
+function editorPoint(e){
+ const c=$("#editorOverlay"),r=c.getBoundingClientRect();
+ return {x:(e.clientX-r.left)*(c.width/r.width),y:(e.clientY-r.top)*(c.height/r.height)};
+}
+function rectOp(type,a,b){return{type,x:Math.min(a.x,b.x),y:Math.min(a.y,b.y),w:Math.abs(a.x-b.x),h:Math.abs(a.y-b.y)}}
+
+function placeEditorText(e){
+ const p=editorPoint(e),stage=$("#editorStage"),canvas=$("#editorOverlay");
+ const box=document.createElement("div");box.className="editor-textbox";box.contentEditable="true";box.textContent="Testo";
+ box.style.left=(p.x/canvas.width*100)+"%";box.style.top=(p.y/canvas.height*100)+"%";
+ box.style.color=editorState.color;box.style.fontSize=editorState.fontSize+"px";
+ stage.appendChild(box);box.focus();document.execCommand?.("selectAll",false,null);
+ const commit=async()=>{
+  const text=box.innerText.trim();if(text){
+   editorState.ops[editorState.page].push({type:"text",x:p.x,y:p.y,text,color:editorState.color,size:editorState.fontSize});
+  }
+  box.remove();await drawEditorOverlay();
+ };
+ box.addEventListener("blur",commit,{once:true});
+ box.addEventListener("keydown",ev=>{if(ev.key==="Escape"){ev.preventDefault();box.remove()}if(ev.key==="Enter"&&!ev.shiftKey){ev.preventDefault();box.blur()}});
+}
+
+async function renderEditorPage(){
+ const page=await editorState.pdf.getPage(editorState.page),vp=page.getViewport({scale:editorState.scale});
+ const c=$("#editorPdfCanvas"),o=$("#editorOverlay"),stage=$("#editorStage");
+ c.width=o.width=Math.ceil(vp.width);c.height=o.height=Math.ceil(vp.height);
+ c.style.width=o.style.width=vp.width+"px";c.style.height=o.style.height=vp.height+"px";
+ stage.style.width=vp.width+"px";stage.style.height=vp.height+"px";
+ await page.render({canvasContext:c.getContext("2d"),viewport:vp}).promise;
+ $$(".editor-page-btn").forEach(b=>b.classList.toggle("active",Number(b.dataset.page)===editorState.page));
+ await drawEditorOverlay();
+}
+
+async function drawEditorOverlay(preview=null){
+ const c=$("#editorOverlay");if(!c)return;const ctx=c.getContext("2d");ctx.clearRect(0,0,c.width,c.height);
+ const ops=[...editorState.ops[editorState.page]];if(preview)ops.push(preview);
+ for(const op of ops){
+  if(op.type==="whiteout"){ctx.fillStyle="#ffffff";ctx.fillRect(op.x,op.y,op.w,op.h)}
+  if(op.type==="highlight"){ctx.save();ctx.globalAlpha=.28;ctx.fillStyle=op.color||"#ffff00";ctx.fillRect(op.x,op.y,op.w,op.h);ctx.restore()}
+  if(op.type==="draw"){
+   if(!op.points?.length)continue;ctx.strokeStyle=op.color||"#000";ctx.lineWidth=op.width||3;ctx.lineCap="round";ctx.lineJoin="round";
+   ctx.beginPath();ctx.moveTo(op.points[0].x,op.points[0].y);for(let i=1;i<op.points.length;i++)ctx.lineTo(op.points[i].x,op.points[i].y);ctx.stroke();
+  }
+  if(op.type==="text"){ctx.fillStyle=op.color||"#000";ctx.font=`${op.size||18}px Arial, sans-serif`;ctx.textBaseline="top";ctx.fillText(op.text,op.x,op.y)}
+ }
+}
+
+function hexRgb(hex){
+ const h=hex.replace("#","");return {r:parseInt(h.slice(0,2),16)/255,g:parseInt(h.slice(2,4),16)/255,b:parseInt(h.slice(4,6),16)/255};
+}
+
+async function saveEditedPdf(){
+ if(!editorState)return;
+ const {PDFDocument,rgb,StandardFonts}=PDFLib;
+ statusText.textContent="Applicazione modifiche al PDF...";
+ const doc=await PDFDocument.load(editorState.bytes.slice());
+ const font=await doc.embedFont(StandardFonts.Helvetica);
+ for(let p=1;p<=doc.getPageCount();p++){
+  const page=doc.getPage(p-1),ops=editorState.ops[p]||[];
+  const pdfPage=await editorState.pdf.getPage(p),vp=pdfPage.getViewport({scale:editorState.scale});
+  const {width:pw,height:ph}=page.getSize(),sx=pw/vp.width,sy=ph/vp.height;
+  for(const op of ops){
+   if(op.type==="whiteout"){
+    page.drawRectangle({x:op.x*sx,y:ph-(op.y+op.h)*sy,width:op.w*sx,height:op.h*sy,color:rgb(1,1,1)});
+   }else if(op.type==="highlight"){
+    const c=hexRgb(op.color||"#ffff00");
+    page.drawRectangle({x:op.x*sx,y:ph-(op.y+op.h)*sy,width:op.w*sx,height:op.h*sy,color:rgb(c.r,c.g,c.b),opacity:.28});
+   }else if(op.type==="text"){
+    const c=hexRgb(op.color||"#000000"),size=(op.size||18)*sy;
+    page.drawText(op.text,{x:op.x*sx,y:ph-op.y*sy-size,size,font,color:rgb(c.r,c.g,c.b)});
+   }else if(op.type==="draw"&&op.points?.length>1){
+    const c=hexRgb(op.color||"#000000");
+    for(let i=1;i<op.points.length;i++){
+     const a=op.points[i-1],b=op.points[i];
+     page.drawLine({start:{x:a.x*sx,y:ph-a.y*sy},end:{x:b.x*sx,y:ph-b.y*sy},thickness:(op.width||3)*sx,color:rgb(c.r,c.g,c.b)});
+    }
+   }
+  }
+ }
+ const bytes=await doc.save();
+ download(bytes,editorState.file.name.replace(/\.pdf$/i,"")+"-modificato.pdf");
+ statusText.textContent="PDF modificato pronto.";
+}
 
 async function maybePreview(){
  if(selectedTool?.id!=="organize"||!files.length)return;
@@ -304,116 +545,134 @@ function updatePositions(){$$("#pageThumbs .page-thumb").forEach((el,i)=>{const 
 
 function xmlEscape(s){
  return String(s)
-   .replace(/&/g,"&amp;")
-   .replace(/</g,"&lt;")
-   .replace(/>/g,"&gt;")
-   .replace(/"/g,"&quot;")
-   .replace(/'/g,"&apos;");
+  .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+  .replace(/"/g,"&quot;").replace(/'/g,"&apos;");
 }
+function dataUrlToUint8(dataUrl){
+ const bin=atob(dataUrl.split(",")[1]), arr=new Uint8Array(bin.length);
+ for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+ return arr;
+}
+function emuFromPx(px){ return Math.round(px*9525); }
 
-async function pdfToWord(){
- const pdf=await pdfjsLib.getDocument({data:new Uint8Array(await ab(files[0]))}).promise;
- const pages=[];
-
- for(let p=1;p<=pdf.numPages;p++){
-  const page=await pdf.getPage(p);
-  const content=await page.getTextContent();
-  const lines=[];
-  let y=null,line=[];
-
-  for(const item of content.items){
-   const iy=Math.round(item.transform[5]);
-   if(y===null||Math.abs(iy-y)<=2){
-    line.push(item.str);
-    if(y===null)y=iy;
-   }else{
-    const txt=line.join(" ").replace(/\s+/g," ").trim();
-    if(txt) lines.push(txt);
-    line=[item.str];
-    y=iy;
-   }
-  }
-  if(line.length){
-   const txt=line.join(" ").replace(/\s+/g," ").trim();
-   if(txt) lines.push(txt);
-  }
-  pages.push(lines);
- }
-
- const zip=new JSZip();
-
- zip.file("[Content_Types].xml",
-`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+function addDocxBase(zip,title){
+ zip.file("[Content_Types].xml",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
  <Default Extension="xml" ContentType="application/xml"/>
+ <Default Extension="jpg" ContentType="image/jpeg"/>
+ <Default Extension="jpeg" ContentType="image/jpeg"/>
  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
 </Types>`);
-
- zip.folder("_rels").file(".rels",
-`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+ zip.folder("_rels").file(".rels",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
 </Relationships>`);
-
  const now=new Date().toISOString();
- zip.folder("docProps").file("core.xml",
-`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+ zip.folder("docProps").file("core.xml",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
- xmlns:dc="http://purl.org/dc/elements/1.1/"
- xmlns:dcterms="http://purl.org/dc/terms/"
+ xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/"
  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
- <dc:title>${xmlEscape(files[0].name.replace(/\.pdf$/i,""))}</dc:title>
- <dc:creator>PIDIEFFE — Powered by RAdebug</dc:creator>
+ <dc:title>${xmlEscape(title)}</dc:title><dc:creator>PIDIEFFE — Powered by RAdebug</dc:creator>
  <dcterms:created xsi:type="dcterms:W3CDTF">${now}</dcterms:created>
  <dcterms:modified xsi:type="dcterms:W3CDTF">${now}</dcterms:modified>
 </cp:coreProperties>`);
-
- zip.folder("docProps").file("app.xml",
-`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+ zip.folder("docProps").file("app.xml",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"
- xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
- <Application>PIDIEFFE</Application>
-</Properties>`);
+ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>PIDIEFFE</Application></Properties>`);
+}
 
- let body="";
- pages.forEach((lines,pageIndex)=>{
-  body += `<w:p><w:pPr><w:spacing w:after="160"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="28"/></w:rPr><w:t>Pagina ${pageIndex+1}</w:t></w:r></w:p>`;
-  lines.forEach(line=>{
-   body += `<w:p><w:pPr><w:spacing w:after="80"/></w:pPr><w:r><w:t xml:space="preserve">${xmlEscape(line)}</w:t></w:r></w:p>`;
-  });
-  if(pageIndex<pages.length-1){
-   body += `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`;
+async function pdfToWord(){
+ const mode=$("#wordMode")?.value || "layout";
+ return mode==="layout" ? await pdfToWordLayout() : await pdfToWordEditable();
+}
+
+async function pdfToWordLayout(){
+ const pdf=await pdfjsLib.getDocument({data:new Uint8Array(await ab(files[0]))}).promise;
+ const zip=new JSZip(); addDocxBase(zip,files[0].name.replace(/\.pdf$/i,""));
+ const rels=[]; let body="";
+ const pageW=11906,pageH=16838;
+
+ for(let p=1;p<=pdf.numPages;p++){
+  statusText.textContent=`Word fedele: pagina ${p} di ${pdf.numPages}...`;
+  const page=await pdf.getPage(p), vp0=page.getViewport({scale:1});
+  const scale=Math.min(2.2,1800/vp0.width), vp=page.getViewport({scale});
+  const canvas=document.createElement("canvas");
+  canvas.width=Math.ceil(vp.width); canvas.height=Math.ceil(vp.height);
+  await page.render({canvasContext:canvas.getContext("2d"),viewport:vp}).promise;
+  const dataUrl=canvas.toDataURL("image/jpeg",.94), imgName=`page${p}.jpg`;
+  zip.folder("word").folder("media").file(imgName,dataUrlToUint8(dataUrl));
+  const rid=`rId${p}`; rels.push(`<Relationship Id="${rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${imgName}"/>`);
+
+  const ratio=vp.width/vp.height, pageRatio=pageW/pageH;
+  let cx,cy;
+  if(ratio>pageRatio){cx=emuFromPx(794);cy=Math.round(cx/ratio)}
+  else{cy=emuFromPx(1123);cx=Math.round(cy*ratio)}
+
+  body+=`<w:p><w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr><w:r><w:drawing>
+  <wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${p}" name="Pagina ${p}"/>
+  <a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
+  <pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
+  <pic:nvPicPr><pic:cNvPr id="${p}" name="${imgName}"/><pic:cNvPicPr/></pic:nvPicPr>
+  <pic:blipFill><a:blip r:embed="${rid}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>
+  <pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>
+  </pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
+  if(p<pdf.numPages) body+=`<w:p><w:r><w:br w:type="page"/></w:r></w:p>`;
+ }
+
+ zip.folder("word").folder("_rels").file("document.xml.rels",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels.join("")}</Relationships>`);
+ zip.folder("word").file("document.xml",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+ xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+ xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+ xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+ xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
+ <w:body>${body}<w:sectPr><w:pgSz w:w="${pageW}" w:h="${pageH}"/><w:pgMar w:top="0" w:right="0" w:bottom="0" w:left="0" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr></w:body></w:document>`);
+
+ const blob=await zip.generateAsync({type:"blob",mimeType:"application/vnd.openxmlformats-officedocument.wordprocessingml.document",compression:"DEFLATE"});
+ download(blob,files[0].name.replace(/\.pdf$/i,"")+"-layout.docx","application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+}
+
+async function pdfToWordEditable(){
+ const pdf=await pdfjsLib.getDocument({data:new Uint8Array(await ab(files[0]))}).promise;
+ const zip=new JSZip(); addDocxBase(zip,files[0].name.replace(/\.pdf$/i,"")); let body="";
+
+ for(let p=1;p<=pdf.numPages;p++){
+  statusText.textContent=`Word modificabile: pagina ${p} di ${pdf.numPages}...`;
+  const page=await pdf.getPage(p), content=await page.getTextContent();
+  const items=content.items.filter(x=>x.str&&x.str.trim()).map(x=>({
+   text:x.str,x:x.transform[4],y:x.transform[5],fontName:x.fontName||"",
+   fontSize:Math.max(7,Math.min(72,Math.abs(x.transform[3])||11))
+  })).sort((a,b)=>Math.abs(b.y-a.y)>3?b.y-a.y:a.x-b.x);
+
+  const lines=[];
+  for(const it of items){let ln=lines.find(l=>Math.abs(l.y-it.y)<=3);if(!ln){ln={y:it.y,items:[]};lines.push(ln)}ln.items.push(it)}
+  lines.sort((a,b)=>b.y-a.y);
+
+  for(const ln of lines){
+   ln.items.sort((a,b)=>a.x-b.x); let runs="";
+   for(const it of ln.items){
+    const bold=/bold|black|heavy|semibold|demi/i.test(it.fontName),italic=/italic|oblique/i.test(it.fontName);
+    const sz=Math.max(14,Math.min(144,Math.round(it.fontSize*2)));
+    runs+=`<w:r><w:rPr><w:sz w:val="${sz}"/><w:szCs w:val="${sz}"/>${bold?"<w:b/>":""}${italic?"<w:i/>":""}</w:rPr><w:t xml:space="preserve">${xmlEscape(it.text)} </w:t></w:r>`;
+   }
+   body+=`<w:p><w:pPr><w:spacing w:after="80"/></w:pPr>${runs}</w:p>`;
   }
- });
+  if(p<pdf.numPages) body+=`<w:p><w:r><w:br w:type="page"/></w:r></w:p>`;
+ }
 
- zip.folder("word").file("document.xml",
-`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
- <w:body>
-  ${body}
-  <w:sectPr>
-   <w:pgSz w:w="11906" w:h="16838"/>
-   <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/>
-  </w:sectPr>
- </w:body>
-</w:document>`);
+ zip.folder("word").file("document.xml",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body}
+<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1080" w:right="1080" w:bottom="1080" w:left="1080" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr>
+</w:body></w:document>`);
 
- const blob=await zip.generateAsync({
-  type:"blob",
-  mimeType:"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  compression:"DEFLATE"
- });
-
- download(
-  blob,
-  files[0].name.replace(/\.pdf$/i,"")+".docx",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
- );
+ const blob=await zip.generateAsync({type:"blob",mimeType:"application/vnd.openxmlformats-officedocument.wordprocessingml.document",compression:"DEFLATE"});
+ download(blob,files[0].name.replace(/\.pdf$/i,"")+"-modificabile.docx","application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 }
 
 })();
