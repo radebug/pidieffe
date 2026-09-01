@@ -110,6 +110,31 @@ footer{border-top:1px solid var(--line);padding:24px 0;color:var(--muted);font-s
 .editor-existing-text:focus{border-color:var(--accent);background:rgba(255,255,255,.85);z-index:4}
 .editor-existing-text.changed{border-color:rgba(46,125,50,.55);background:rgba(255,255,255,.82)}
 
+
+/* v12 continuous PDF editor */
+.editor-shell{grid-template-columns:180px minmax(0,1fr);min-height:0}
+.editor-main{min-width:0;min-height:0;display:flex;flex-direction:column}
+.editor-stage-wrap{background:#d9dce3;padding:18px;overflow:auto;min-height:0}
+.editor-pages-stack{display:flex;flex-direction:column;gap:22px;align-items:center;min-width:100%}
+.editor-page-stage{position:relative;background:#fff;box-shadow:0 3px 14px rgba(0,0,0,.16);flex:0 0 auto}
+.editor-page-stage canvas.pdf-page-canvas{display:block}
+.editor-page-stage .editor-text-layer,
+.editor-page-stage .editor-overlay{position:absolute;inset:0}
+.editor-page-stage .editor-overlay{touch-action:none}
+.editor-new-text{position:absolute;min-width:40px;min-height:22px;padding:2px 4px;border:1px dashed var(--accent);background:rgba(255,255,255,.88);outline:none;white-space:pre-wrap;line-height:1.1;z-index:6;cursor:text}
+.editor-new-text:focus{border-style:solid;background:#fff}
+.editor-existing-text{z-index:5}
+.editor-page-label{position:absolute;right:8px;bottom:6px;background:rgba(0,0,0,.62);color:#fff;border-radius:6px;padding:2px 6px;font-size:10px;pointer-events:none;z-index:8}
+.editor-zoom{display:flex;align-items:center;gap:6px;margin-left:auto}
+.editor-zoom button{min-width:42px}
+.editor-zoom span{min-width:54px;text-align:center;font-size:12px;color:var(--muted);font-weight:700}
+@media(max-width:720px){
+ .editor-shell{grid-template-columns:1fr}
+ .editor-sidebar{display:none}
+ .editor-stage-wrap{padding:8px}
+ .modal.edit-mode .modal-card{height:100vh}
+}
+
 </style>
 </head>
 <body>
@@ -338,6 +363,7 @@ async function pdfToJpg(){const pdf=await pdfjsLib.getDocument({data:new Uint8Ar
 async function compressPDF(){const pdf=await pdfjsLib.getDocument({data:new Uint8Array(await ab(files[0]))}).promise,{jsPDF}=jspdf,q=Number($("#quality").value),scale=Number($("#scale").value);let out=null;for(let n=1;n<=pdf.numPages;n++){const p=await pdf.getPage(n),vp=p.getViewport({scale}),c=document.createElement("canvas");c.width=vp.width;c.height=vp.height;await p.render({canvasContext:c.getContext("2d"),viewport:vp}).promise;const img=c.toDataURL("image/jpeg",q),land=vp.width>=vp.height,w=land?297:210,h=land?210:297;if(!out)out=new jsPDF({orientation:land?"landscape":"portrait",unit:"mm",format:"a4",compress:true});else out.addPage("a4",land?"landscape":"portrait");const r=Math.min(w/vp.width,h/vp.height),iw=vp.width*r,ih=vp.height*r;out.addImage(img,"JPEG",(w-iw)/2,(h-ih)/2,iw,ih,undefined,"FAST")}out.save("pdf-compresso.pdf")}
 
 
+
 async function initPdfEditor(file){
  const mount=$("#pdfEditorMount");
  if(!mount)return;
@@ -348,11 +374,21 @@ async function initPdfEditor(file){
  mount.innerHTML='<div class="thumb-empty">Apertura PDF...</div>';
  const bytes=new Uint8Array(await ab(file));
  const pdf=await pdfjsLib.getDocument({data:bytes.slice()}).promise;
- editorState={file,bytes,pdf,page:1,scale:1.25,tool:"edittext",color:"#d9413a",fontSize:18,stroke:3,ops:{},undo:[],textEdits:{}};
- for(let i=1;i<=pdf.numPages;i++){editorState.ops[i]=[];editorState.textEdits[i]=[];}
+
+ editorState={
+  file,bytes,pdf,tool:"edittext",color:"#d9413a",fontSize:18,stroke:3,
+  zoom:1,fit:true,ops:{},textEdits:{},newTexts:{},pageViews:{},nextTextId:1
+ };
+ for(let i=1;i<=pdf.numPages;i++){
+  editorState.ops[i]=[];
+  editorState.textEdits[i]=[];
+  editorState.newTexts[i]=[];
+ }
+
  mount.innerHTML=`
   <div class="editor-toolbar" aria-label="Strumenti modifica PDF">
-   <button type="button" data-editor-tool="edittext" class="active">Aa Modifica testo</button><button type="button" data-editor-tool="text">T Nuovo testo</button>
+   <button type="button" data-editor-tool="edittext" class="active">Aa Modifica testo</button>
+   <button type="button" data-editor-tool="text">T Nuovo testo</button>
    <button type="button" data-editor-tool="whiteout">▭ Correggi</button>
    <button type="button" data-editor-tool="highlight">▰ Evidenzia</button>
    <button type="button" data-editor-tool="draw">✎ Disegna</button>
@@ -360,41 +396,49 @@ async function initPdfEditor(file){
    <label title="Dimensione testo"><input id="editorFontSize" type="number" value="18" min="8" max="72" aria-label="Dimensione testo"></label>
    <button type="button" id="editorUndo">↶ Annulla</button>
    <button type="button" id="editorClear">Pulisci pagina</button>
+   <div class="editor-zoom">
+    <button type="button" id="zoomOut" title="Riduci">−</button>
+    <button type="button" id="zoomFit" title="Adatta alla larghezza">Adatta</button>
+    <button type="button" id="zoomIn" title="Ingrandisci">+</button>
+    <span id="zoomLabel">Adatta</span>
+   </div>
   </div>
   <div class="editor-shell">
    <aside class="editor-sidebar">
     <strong style="font-size:13px">Pagine</strong>
     <div class="editor-pages" id="editorPages"></div>
    </aside>
-   <div>
-    <div class="editor-stage-wrap">
-     <div class="editor-stage" id="editorStage">
-      <canvas id="editorPdfCanvas"></canvas>
-      <div id="editorTextLayer" class="editor-text-layer"></div>
-      <canvas id="editorOverlay" class="editor-overlay"></canvas>
-     </div>
+   <div class="editor-main">
+    <div class="editor-stage-wrap" id="editorScroll">
+     <div class="editor-pages-stack" id="editorPagesStack"></div>
     </div>
     <div class="editor-actions">
      <button type="button" class="primary-btn" id="editorSave">Salva PDF</button>
     </div>
-    <p class="editor-note">Con “Modifica testo” puoi cliccare direttamente sul testo esistente e riscriverlo. Al salvataggio PIDIEFFE sostituisce visivamente il testo nella stessa posizione. Le modifiche restano nel browser.</p>
+    <p class="editor-note">Il testo esistente è cliccabile con “Modifica testo”. “Nuovo testo” crea caselle che puoi riaprire e modificare in qualsiasi momento. Le pagine scorrono verticalmente.</p>
    </div>
   </div>`;
- await buildEditorThumbs();
+
  bindEditorControls();
- await renderEditorPage();
+ await renderAllEditorPages();
+ await buildEditorThumbs();
 }
 
 async function buildEditorThumbs(){
  const host=$("#editorPages"); if(!host||!editorState)return;
  host.innerHTML="";
  for(let n=1;n<=editorState.pdf.numPages;n++){
-  const page=await editorState.pdf.getPage(n),vp=page.getViewport({scale:.18});
-  const c=document.createElement("canvas");c.width=Math.ceil(vp.width);c.height=Math.ceil(vp.height);
+  const page=await editorState.pdf.getPage(n),vp=page.getViewport({scale:.16});
+  const c=document.createElement("canvas");
+  c.width=Math.ceil(vp.width);c.height=Math.ceil(vp.height);
   await page.render({canvasContext:c.getContext("2d"),viewport:vp}).promise;
-  const b=document.createElement("button");b.type="button";b.className="editor-page-btn"+(n===editorState.page?" active":"");b.dataset.page=n;
-  b.appendChild(c);const s=document.createElement("span");s.textContent="Pagina "+n;b.appendChild(s);
-  b.addEventListener("click",async()=>{editorState.page=n;await renderEditorPage();});
+  const b=document.createElement("button");
+  b.type="button";b.className="editor-page-btn";b.dataset.page=n;
+  b.appendChild(c);
+  const s=document.createElement("span");s.textContent="Pagina "+n;b.appendChild(s);
+  b.addEventListener("click",()=>{
+   document.querySelector(`.editor-page-stage[data-page="${n}"]`)?.scrollIntoView({behavior:"smooth",block:"start"});
+  });
   host.appendChild(b);
  }
 }
@@ -403,147 +447,268 @@ function bindEditorControls(){
  $$("[data-editor-tool]").forEach(b=>b.addEventListener("click",()=>{
   editorState.tool=b.dataset.editorTool;
   $$("[data-editor-tool]").forEach(x=>x.classList.toggle("active",x===b));
-  const ov=$("#editorOverlay"),tl=$("#editorTextLayer");
-  const editing=editorState.tool==="edittext";
-  if(ov)ov.style.pointerEvents=editing?"none":"auto";
-  if(tl)tl.style.pointerEvents=editing?"auto":"none";
+  updateEditorPointerModes();
  }));
+
  $("#editorColor").addEventListener("input",e=>editorState.color=e.target.value);
  $("#editorFontSize").addEventListener("input",e=>editorState.fontSize=Math.max(8,Math.min(72,Number(e.target.value)||18)));
+
  $("#editorUndo").addEventListener("click",async()=>{
-  const arr=editorState.ops[editorState.page];
-  if(arr.length){arr.pop();await drawEditorOverlay();}
+  const page=currentVisibleEditorPage();
+  if(!page)return;
+  if(editorState.ops[page].length)editorState.ops[page].pop();
+  else if(editorState.newTexts[page].length)editorState.newTexts[page].pop();
+  else if(editorState.textEdits[page].length)editorState.textEdits[page].pop();
+  await renderSingleEditorPage(page,true);
  });
+
  $("#editorClear").addEventListener("click",async()=>{
-  editorState.ops[editorState.page]=[];
-  await drawEditorOverlay();
+  const page=currentVisibleEditorPage();
+  if(!page)return;
+  editorState.ops[page]=[];
+  editorState.textEdits[page]=[];
+  editorState.newTexts[page]=[];
+  await renderSingleEditorPage(page,true);
+ });
+
+ $("#zoomOut").addEventListener("click",async()=>{
+  editorState.fit=false;editorState.zoom=Math.max(.5,editorState.zoom-.15);
+  await rerenderEditorWithZoom();
+ });
+ $("#zoomIn").addEventListener("click",async()=>{
+  editorState.fit=false;editorState.zoom=Math.min(2.5,editorState.zoom+.15);
+  await rerenderEditorWithZoom();
+ });
+ $("#zoomFit").addEventListener("click",async()=>{
+  editorState.fit=true;await rerenderEditorWithZoom();
  });
  $("#editorSave").addEventListener("click",saveEditedPdf);
- const overlay=$("#editorOverlay");
- let drawing=false,start=null,current=null;
- overlay.addEventListener("pointerdown",e=>{
-  if(editorState.tool==="text"){placeEditorText(e);return}
-  drawing=true;overlay.setPointerCapture(e.pointerId);start=editorPoint(e);current={points:[start]};
- });
- overlay.addEventListener("pointermove",e=>{
-  if(!drawing)return;
-  const p=editorPoint(e);
-  if(editorState.tool==="draw")current.points.push(p);else current.end=p;
-  drawEditorOverlay(current);
- });
- overlay.addEventListener("pointerup",async e=>{
-  if(!drawing)return;drawing=false;
-  const p=editorPoint(e);
-  if(editorState.tool==="draw"){
-   if(current.points.length<2)current.points.push(p);
-   editorState.ops[editorState.page].push({type:"draw",points:current.points,color:editorState.color,width:editorState.stroke});
-  }else if(editorState.tool==="whiteout"){
-   editorState.ops[editorState.page].push(rectOp("whiteout",start,p));
-  }else if(editorState.tool==="highlight"){
-   const op=rectOp("highlight",start,p);op.color=editorState.color;editorState.ops[editorState.page].push(op);
-  }
-  current=null;await drawEditorOverlay();
+
+ const scroller=$("#editorScroll");
+ let ticking=false;
+ scroller.addEventListener("scroll",()=>{
+  if(ticking)return;ticking=true;
+  requestAnimationFrame(()=>{
+   const p=currentVisibleEditorPage();
+   $$(".editor-page-btn").forEach(b=>b.classList.toggle("active",Number(b.dataset.page)===p));
+   ticking=false;
+  });
  });
 }
 
-function editorPoint(e){
- const c=$("#editorOverlay"),r=c.getBoundingClientRect();
- return {x:(e.clientX-r.left)*(c.width/r.width),y:(e.clientY-r.top)*(c.height/r.height)};
-}
-function rectOp(type,a,b){return{type,x:Math.min(a.x,b.x),y:Math.min(a.y,b.y),w:Math.abs(a.x-b.x),h:Math.abs(a.y-b.y)}}
-
-function placeEditorText(e){
- const p=editorPoint(e),stage=$("#editorStage"),canvas=$("#editorOverlay");
- const box=document.createElement("div");box.className="editor-textbox";box.contentEditable="true";box.textContent="Testo";
- box.style.left=(p.x/canvas.width*100)+"%";box.style.top=(p.y/canvas.height*100)+"%";
- box.style.color=editorState.color;box.style.fontSize=editorState.fontSize+"px";
- stage.appendChild(box);box.focus();document.execCommand?.("selectAll",false,null);
- const commit=async()=>{
-  const text=box.innerText.trim();if(text){
-   editorState.ops[editorState.page].push({type:"text",x:p.x,y:p.y,text,color:editorState.color,size:editorState.fontSize});
-  }
-  box.remove();await drawEditorOverlay();
- };
- box.addEventListener("blur",commit,{once:true});
- box.addEventListener("keydown",ev=>{if(ev.key==="Escape"){ev.preventDefault();box.remove()}if(ev.key==="Enter"&&!ev.shiftKey){ev.preventDefault();box.blur()}});
+function currentVisibleEditorPage(){
+ const scroller=$("#editorScroll");
+ const stages=$$(".editor-page-stage");
+ if(!scroller||!stages.length)return 1;
+ const sr=scroller.getBoundingClientRect();
+ let best=1,bestDist=Infinity;
+ stages.forEach(s=>{
+  const r=s.getBoundingClientRect();
+  const d=Math.abs(r.top-sr.top-12);
+  if(d<bestDist){bestDist=d;best=Number(s.dataset.page)}
+ });
+ return best;
 }
 
-async function renderEditorPage(){
- const page=await editorState.pdf.getPage(editorState.page),vp=page.getViewport({scale:editorState.scale});
- const c=$("#editorPdfCanvas"),o=$("#editorOverlay"),stage=$("#editorStage");
- c.width=o.width=Math.ceil(vp.width);c.height=o.height=Math.ceil(vp.height);
- c.style.width=o.style.width=vp.width+"px";c.style.height=o.style.height=vp.height+"px";
+function editorFitScale(page){
+ const scroller=$("#editorScroll");
+ const vp=page.getViewport({scale:1});
+ const avail=Math.max(280,(scroller?.clientWidth||900)-50);
+ return Math.min(1.65,avail/vp.width);
+}
+
+async function rerenderEditorWithZoom(){
+ const scroller=$("#editorScroll"),p=currentVisibleEditorPage();
+ await renderAllEditorPages();
+ requestAnimationFrame(()=>document.querySelector(`.editor-page-stage[data-page="${p}"]`)?.scrollIntoView({block:"start"}));
+ const label=$("#zoomLabel");
+ if(label)label.textContent=editorState.fit?"Adatta":Math.round(editorState.zoom*100)+"%";
+}
+
+async function renderAllEditorPages(){
+ const stack=$("#editorPagesStack"); if(!stack)return;
+ stack.innerHTML="";
+ for(let p=1;p<=editorState.pdf.numPages;p++){
+  const page=await editorState.pdf.getPage(p);
+  const scale=editorState.fit?editorFitScale(page):editorState.zoom;
+  const vp=page.getViewport({scale});
+  editorState.pageViews[p]={scale,width:vp.width,height:vp.height};
+
+  const stage=document.createElement("div");
+  stage.className="editor-page-stage";stage.dataset.page=p;
+  stage.style.width=vp.width+"px";stage.style.height=vp.height+"px";
+  stage.innerHTML=`
+   <canvas class="pdf-page-canvas" data-pdf-page="${p}"></canvas>
+   <div class="editor-text-layer" data-text-layer="${p}"></div>
+   <canvas class="editor-overlay" data-overlay-page="${p}"></canvas>
+   <div class="editor-page-label">Pagina ${p}</div>`;
+  stack.appendChild(stage);
+
+  const canvas=stage.querySelector(".pdf-page-canvas");
+  const overlay=stage.querySelector(".editor-overlay");
+  canvas.width=Math.ceil(vp.width);canvas.height=Math.ceil(vp.height);
+  overlay.width=Math.ceil(vp.width);overlay.height=Math.ceil(vp.height);
+  canvas.style.width=overlay.style.width=vp.width+"px";
+  canvas.style.height=overlay.style.height=vp.height+"px";
+
+  await page.render({canvasContext:canvas.getContext("2d"),viewport:vp}).promise;
+  await buildEditableTextLayer(page,vp,p);
+  renderNewTextsForPage(p);
+  bindPageOverlay(overlay,p);
+  await drawEditorOverlayForPage(p);
+ }
+ updateEditorPointerModes();
+ const label=$("#zoomLabel");if(label)label.textContent=editorState.fit?"Adatta":Math.round(editorState.zoom*100)+"%";
+}
+
+async function renderSingleEditorPage(pageNum, rebuildText=false){
+ const stage=document.querySelector(`.editor-page-stage[data-page="${pageNum}"]`);
+ if(!stage)return;
+ const page=await editorState.pdf.getPage(pageNum);
+ const scale=editorState.fit?editorFitScale(page):editorState.zoom;
+ const vp=page.getViewport({scale});
+ editorState.pageViews[pageNum]={scale,width:vp.width,height:vp.height};
  stage.style.width=vp.width+"px";stage.style.height=vp.height+"px";
- await page.render({canvasContext:c.getContext("2d"),viewport:vp}).promise;
- await buildEditableTextLayer(page,vp);
- $$(".editor-page-btn").forEach(b=>b.classList.toggle("active",Number(b.dataset.page)===editorState.page));
- const editing=editorState.tool==="edittext";o.style.pointerEvents=editing?"none":"auto";$("#editorTextLayer").style.pointerEvents=editing?"auto":"none";
- await drawEditorOverlay();
+
+ const canvas=stage.querySelector(".pdf-page-canvas"),overlay=stage.querySelector(".editor-overlay");
+ canvas.width=Math.ceil(vp.width);canvas.height=Math.ceil(vp.height);
+ overlay.width=Math.ceil(vp.width);overlay.height=Math.ceil(vp.height);
+ canvas.style.width=overlay.style.width=vp.width+"px";canvas.style.height=overlay.style.height=vp.height+"px";
+ await page.render({canvasContext:canvas.getContext("2d"),viewport:vp}).promise;
+ await buildEditableTextLayer(page,vp,pageNum);
+ renderNewTextsForPage(pageNum);
+ await drawEditorOverlayForPage(pageNum);
+ updateEditorPointerModes();
 }
 
+function updateEditorPointerModes(){
+ $$(".editor-overlay").forEach(o=>{
+  const geometric=["whiteout","highlight","draw","text"].includes(editorState.tool);
+  o.style.pointerEvents=geometric?"auto":"none";
+  o.style.cursor=editorState.tool==="text"?"text":"crosshair";
+ });
+ $$(".editor-text-layer").forEach(l=>{
+  l.style.pointerEvents=editorState.tool==="edittext"?"auto":"none";
+ });
+ $$(".editor-existing-text").forEach(x=>x.style.pointerEvents=editorState.tool==="edittext"?"auto":"none");
+ $$(".editor-new-text").forEach(x=>x.style.pointerEvents=["edittext","text"].includes(editorState.tool)?"auto":"none");
+}
 
-async function buildEditableTextLayer(page,vp){
- const layer=$("#editorTextLayer"); if(!layer)return;
+async function buildEditableTextLayer(page,vp,pageNum){
+ const layer=document.querySelector(`[data-text-layer="${pageNum}"]`);if(!layer)return;
  layer.innerHTML="";
  const content=await page.getTextContent();
- const stored=editorState.textEdits[editorState.page]||[];
+ const stored=editorState.textEdits[pageNum]||[];
  let idx=0;
  for(const item of content.items){
-  if(!item.str || !item.str.trim())continue;
+  if(!item.str||!item.str.trim())continue;
   const tx=pdfjsLib.Util.transform(vp.transform,item.transform);
-  const fontHeight=Math.hypot(tx[2],tx[3]);
+  const fontHeight=Math.max(8,Math.hypot(tx[2],tx[3]));
   const angle=Math.atan2(tx[1],tx[0]);
-  const left=tx[4], top=tx[5]-fontHeight;
-  const width=Math.max(4,(item.width||0)*editorState.scale);
+  const left=tx[4],top=tx[5]-fontHeight;
+  const width=Math.max(4,(item.width||0)*vp.scale);
   const id=idx++;
   const saved=stored.find(x=>x.id===id);
   const div=document.createElement("div");
   div.className="editor-existing-text"+(saved&&saved.text!==item.str?" changed":"");
-  div.contentEditable="true";
-  div.spellcheck=false;
-  div.dataset.textId=String(id);
-  div.dataset.original=item.str;
+  div.contentEditable="true";div.spellcheck=false;
+  div.dataset.textId=String(id);div.dataset.original=item.str;
   div.textContent=saved?saved.text:item.str;
-  div.style.left=left+"px";
-  div.style.top=top+"px";
-  div.style.fontSize=fontHeight+"px";
-  div.style.fontFamily="Arial, sans-serif";
-  div.style.transform=`rotate(${angle}rad)`;
-  div.style.minWidth=Math.max(8,width)+"px";
-  div.style.height=Math.max(12,fontHeight*1.15)+"px";
+  div.style.left=left+"px";div.style.top=top+"px";div.style.fontSize=fontHeight+"px";
+  div.style.fontFamily="Arial, sans-serif";div.style.transform=`rotate(${angle}rad)`;
+  div.style.minWidth=Math.max(8,width)+"px";div.style.height=Math.max(12,fontHeight*1.18)+"px";
   div.addEventListener("input",()=>{
-    const text=div.innerText.replace(/\n/g," ");
-    const rec={
-      id,original:item.str,text,
-      x:left,y:top,w:Math.max(width,div.getBoundingClientRect().width),
-      h:Math.max(fontHeight*1.15,div.getBoundingClientRect().height),
-      size:fontHeight,angle
-    };
-    const arr=editorState.textEdits[editorState.page];
-    const pos=arr.findIndex(x=>x.id===id);
-    if(pos>=0)arr[pos]=rec; else arr.push(rec);
-    div.classList.toggle("changed",text!==item.str);
+   const text=div.innerText.replace(/\n/g," ");
+   const rec={id,original:item.str,text,x:left,y:top,w:Math.max(width,div.offsetWidth),h:Math.max(fontHeight*1.18,div.offsetHeight),size:fontHeight,angle};
+   const arr=editorState.textEdits[pageNum],pos=arr.findIndex(x=>x.id===id);
+   if(pos>=0)arr[pos]=rec;else arr.push(rec);
+   div.classList.toggle("changed",text!==item.str);
   });
   layer.appendChild(div);
  }
 }
 
-async function drawEditorOverlay(preview=null){
- const c=$("#editorOverlay");if(!c)return;const ctx=c.getContext("2d");ctx.clearRect(0,0,c.width,c.height);
- const ops=[...editorState.ops[editorState.page]];if(preview)ops.push(preview);
- for(const op of ops){
-  if(op.type==="whiteout"){ctx.fillStyle="#ffffff";ctx.fillRect(op.x,op.y,op.w,op.h)}
-  if(op.type==="highlight"){ctx.save();ctx.globalAlpha=.28;ctx.fillStyle=op.color||"#ffff00";ctx.fillRect(op.x,op.y,op.w,op.h);ctx.restore()}
-  if(op.type==="draw"){
-   if(!op.points?.length)continue;ctx.strokeStyle=op.color||"#000";ctx.lineWidth=op.width||3;ctx.lineCap="round";ctx.lineJoin="round";
-   ctx.beginPath();ctx.moveTo(op.points[0].x,op.points[0].y);for(let i=1;i<op.points.length;i++)ctx.lineTo(op.points[i].x,op.points[i].y);ctx.stroke();
+function renderNewTextsForPage(pageNum){
+ const stage=document.querySelector(`.editor-page-stage[data-page="${pageNum}"]`);if(!stage)return;
+ stage.querySelectorAll(".editor-new-text").forEach(x=>x.remove());
+ const view=editorState.pageViews[pageNum];
+ for(const rec of editorState.newTexts[pageNum]){
+  const box=document.createElement("div");
+  box.className="editor-new-text";box.contentEditable="true";box.spellcheck=false;box.dataset.newTextId=rec.id;
+  box.textContent=rec.text;box.style.left=rec.x+"px";box.style.top=rec.y+"px";
+  box.style.color=rec.color;box.style.fontSize=rec.size+"px";
+  box.addEventListener("input",()=>{
+   rec.text=box.innerText;rec.w=box.offsetWidth;rec.h=box.offsetHeight;
+  });
+  box.addEventListener("focus",()=>{editorState.tool="text";$$("[data-editor-tool]").forEach(b=>b.classList.toggle("active",b.dataset.editorTool==="text"));updateEditorPointerModes()});
+  stage.appendChild(box);
+ }
+}
+
+function createNewText(pageNum,x,y){
+ const rec={id:editorState.nextTextId++,text:"Nuovo testo",x,y,color:editorState.color,size:editorState.fontSize,w:90,h:24};
+ editorState.newTexts[pageNum].push(rec);
+ renderNewTextsForPage(pageNum);updateEditorPointerModes();
+ const box=document.querySelector(`.editor-page-stage[data-page="${pageNum}"] .editor-new-text[data-new-text-id="${rec.id}"]`);
+ if(box){
+  box.focus();
+  const sel=window.getSelection(),range=document.createRange();
+  range.selectNodeContents(box);sel.removeAllRanges();sel.addRange(range);
+ }
+}
+
+function pointOnOverlay(e,overlay){
+ const r=overlay.getBoundingClientRect();
+ return{x:(e.clientX-r.left)*(overlay.width/r.width),y:(e.clientY-r.top)*(overlay.height/r.height)};
+}
+
+function rectOp(type,a,b){return{type,x:Math.min(a.x,b.x),y:Math.min(a.y,b.y),w:Math.abs(a.x-b.x),h:Math.abs(a.y-b.y)}}
+
+function bindPageOverlay(overlay,pageNum){
+ let drawing=false,start=null,current=null;
+ overlay.addEventListener("pointerdown",e=>{
+  const p=pointOnOverlay(e,overlay);
+  if(editorState.tool==="text"){createNewText(pageNum,p.x,p.y);return}
+  if(!["whiteout","highlight","draw"].includes(editorState.tool))return;
+  drawing=true;overlay.setPointerCapture(e.pointerId);start=p;current={points:[p]};
+ });
+ overlay.addEventListener("pointermove",e=>{
+  if(!drawing)return;const p=pointOnOverlay(e,overlay);
+  if(editorState.tool==="draw")current.points.push(p);else current.end=p;
+  drawEditorOverlayForPage(pageNum,current);
+ });
+ overlay.addEventListener("pointerup",async e=>{
+  if(!drawing)return;drawing=false;const p=pointOnOverlay(e,overlay);
+  if(editorState.tool==="draw"){
+   if(current.points.length<2)current.points.push(p);
+   editorState.ops[pageNum].push({type:"draw",points:current.points,color:editorState.color,width:editorState.stroke});
+  }else if(editorState.tool==="whiteout"){
+   editorState.ops[pageNum].push(rectOp("whiteout",start,p));
+  }else if(editorState.tool==="highlight"){
+   const op=rectOp("highlight",start,p);op.color=editorState.color;editorState.ops[pageNum].push(op);
   }
-  if(op.type==="text"){ctx.fillStyle=op.color||"#000";ctx.font=`${op.size||18}px Arial, sans-serif`;ctx.textBaseline="top";ctx.fillText(op.text,op.x,op.y)}
+  current=null;await drawEditorOverlayForPage(pageNum);
+ });
+}
+
+async function drawEditorOverlayForPage(pageNum,preview=null){
+ const c=document.querySelector(`[data-overlay-page="${pageNum}"]`);if(!c)return;
+ const ctx=c.getContext("2d");ctx.clearRect(0,0,c.width,c.height);
+ const ops=[...(editorState.ops[pageNum]||[])];if(preview)ops.push(preview);
+ for(const op of ops){
+  if(op.type==="whiteout"){ctx.fillStyle="#fff";ctx.fillRect(op.x,op.y,op.w,op.h)}
+  else if(op.type==="highlight"){ctx.save();ctx.globalAlpha=.28;ctx.fillStyle=op.color||"#ffff00";ctx.fillRect(op.x,op.y,op.w,op.h);ctx.restore()}
+  else if(op.type==="draw"&&op.points?.length){
+   ctx.strokeStyle=op.color||"#000";ctx.lineWidth=op.width||3;ctx.lineCap="round";ctx.lineJoin="round";
+   ctx.beginPath();ctx.moveTo(op.points[0].x,op.points[0].y);
+   for(let i=1;i<op.points.length;i++)ctx.lineTo(op.points[i].x,op.points[i].y);ctx.stroke();
+  }
  }
 }
 
 function hexRgb(hex){
- const h=hex.replace("#","");return {r:parseInt(h.slice(0,2),16)/255,g:parseInt(h.slice(2,4),16)/255,b:parseInt(h.slice(4,6),16)/255};
+ const h=(hex||"#000000").replace("#","");
+ return{r:parseInt(h.slice(0,2),16)/255,g:parseInt(h.slice(2,4),16)/255,b:parseInt(h.slice(4,6),16)/255};
 }
 
 async function saveEditedPdf(){
@@ -552,39 +717,35 @@ async function saveEditedPdf(){
  statusText.textContent="Applicazione modifiche al PDF...";
  const doc=await PDFDocument.load(editorState.bytes.slice());
  const font=await doc.embedFont(StandardFonts.Helvetica);
+
  for(let p=1;p<=doc.getPageCount();p++){
-  const page=doc.getPage(p-1),ops=editorState.ops[p]||[],textEdits=editorState.textEdits[p]||[];
-  const pdfPage=await editorState.pdf.getPage(p),vp=pdfPage.getViewport({scale:editorState.scale});
+  const page=doc.getPage(p-1);
+  const pdfPage=await editorState.pdf.getPage(p);
+  const view=editorState.pageViews[p];
+  const vp=pdfPage.getViewport({scale:view?.scale||1});
   const {width:pw,height:ph}=page.getSize(),sx=pw/vp.width,sy=ph/vp.height;
-  for(const ed of textEdits){
+
+  for(const ed of editorState.textEdits[p]||[]){
    if(ed.text===ed.original)continue;
-   page.drawRectangle({
-    x:ed.x*sx,
-    y:ph-(ed.y+ed.h)*sy,
-    width:Math.max(1,ed.w*sx),
-    height:Math.max(1,ed.h*sy),
-    color:rgb(1,1,1)
-   });
+   page.drawRectangle({x:ed.x*sx,y:ph-(ed.y+ed.h)*sy,width:Math.max(1,ed.w*sx),height:Math.max(1,ed.h*sy),color:rgb(1,1,1)});
    const fs=Math.max(5,ed.size*sy);
-   page.drawText(ed.text||"",{
-    x:ed.x*sx,
-    y:ph-(ed.y*sy)-fs,
-    size:fs,
-    font,
-    color:rgb(0,0,0)
-   });
+   page.drawText(ed.text||"",{x:ed.x*sx,y:ph-ed.y*sy-fs,size:fs,font,color:rgb(0,0,0)});
   }
-  for(const op of ops){
+
+  for(const nt of editorState.newTexts[p]||[]){
+   if(!nt.text?.trim())continue;
+   const c=hexRgb(nt.color),fs=Math.max(5,nt.size*sy);
+   page.drawText(nt.text.replace(/\n/g," "),{x:nt.x*sx,y:ph-nt.y*sy-fs,size:fs,font,color:rgb(c.r,c.g,c.b)});
+  }
+
+  for(const op of editorState.ops[p]||[]){
    if(op.type==="whiteout"){
     page.drawRectangle({x:op.x*sx,y:ph-(op.y+op.h)*sy,width:op.w*sx,height:op.h*sy,color:rgb(1,1,1)});
    }else if(op.type==="highlight"){
     const c=hexRgb(op.color||"#ffff00");
     page.drawRectangle({x:op.x*sx,y:ph-(op.y+op.h)*sy,width:op.w*sx,height:op.h*sy,color:rgb(c.r,c.g,c.b),opacity:.28});
-   }else if(op.type==="text"){
-    const c=hexRgb(op.color||"#000000"),size=(op.size||18)*sy;
-    page.drawText(op.text,{x:op.x*sx,y:ph-op.y*sy-size,size,font,color:rgb(c.r,c.g,c.b)});
    }else if(op.type==="draw"&&op.points?.length>1){
-    const c=hexRgb(op.color||"#000000");
+    const c=hexRgb(op.color||"#000");
     for(let i=1;i<op.points.length;i++){
      const a=op.points[i-1],b=op.points[i];
      page.drawLine({start:{x:a.x*sx,y:ph-a.y*sy},end:{x:b.x*sx,y:ph-b.y*sy},thickness:(op.width||3)*sx,color:rgb(c.r,c.g,c.b)});
