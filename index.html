@@ -135,6 +135,26 @@ footer{border-top:1px solid var(--line);padding:24px 0;color:var(--muted);font-s
  .modal.edit-mode .modal-card{height:100vh}
 }
 
+
+/* v13: area di modifica più grande e zoom avanzato */
+.modal.edit-mode .modal-card{width:100vw!important;max-width:none!important;height:100vh!important;max-height:100vh!important;margin:0!important;border-radius:0!important}
+.modal.edit-mode .modal-body{padding:6px 10px 8px!important}
+.modal.edit-mode .editor-shell{grid-template-columns:110px minmax(0,1fr)!important;gap:6px!important;flex:1;min-height:0}
+.modal.edit-mode .editor-sidebar{min-width:0;overflow:hidden}
+.modal.edit-mode .editor-pages{height:100%;max-height:none;overflow-y:auto}
+.modal.edit-mode .editor-main{min-height:0}
+.modal.edit-mode .editor-stage-wrap{height:100%;max-height:none!important;min-height:0;padding:8px!important;overflow:auto!important}
+.modal.edit-mode .editor-toolbar{padding:6px 8px}
+.modal.edit-mode .editor-actions{margin-top:5px}
+.modal.edit-mode .editor-note{margin:4px 0 0}
+.editor-zoom{display:flex;align-items:center;gap:6px;margin-left:auto;min-width:330px}
+.editor-zoom input[type="range"]{width:160px}
+.editor-zoom .zoom-value{width:50px;text-align:right;font-size:12px;font-weight:700}
+.editor-zoom select{min-height:40px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--text);padding:6px}
+.modal.edit-mode.sidebar-hidden .editor-shell{grid-template-columns:0 minmax(0,1fr)!important}
+.modal.edit-mode.sidebar-hidden .editor-sidebar{display:none}
+@media(max-width:850px){.modal.edit-mode .editor-shell{grid-template-columns:80px minmax(0,1fr)!important}.editor-zoom{min-width:220px}.editor-zoom input[type="range"]{width:90px}}
+
 </style>
 </head>
 <body>
@@ -377,7 +397,7 @@ async function initPdfEditor(file){
 
  editorState={
   file,bytes,pdf,tool:"edittext",color:"#d9413a",fontSize:18,stroke:3,
-  zoom:1,fit:true,ops:{},textEdits:{},newTexts:{},pageViews:{},nextTextId:1
+  zoom:1,fitMode:"width",ops:{},textEdits:{},newTexts:{},pageViews:{},nextTextId:1
  };
  for(let i=1;i<=pdf.numPages;i++){
   editorState.ops[i]=[];
@@ -396,11 +416,17 @@ async function initPdfEditor(file){
    <label title="Dimensione testo"><input id="editorFontSize" type="number" value="18" min="8" max="72" aria-label="Dimensione testo"></label>
    <button type="button" id="editorUndo">↶ Annulla</button>
    <button type="button" id="editorClear">Pulisci pagina</button>
+   <button type="button" id="editorSidebarToggle" title="Mostra/nascondi miniature">☰</button>
    <div class="editor-zoom">
     <button type="button" id="zoomOut" title="Riduci">−</button>
-    <button type="button" id="zoomFit" title="Adatta alla larghezza">Adatta</button>
+    <input id="zoomRange" type="range" min="50" max="250" step="10" value="100" aria-label="Zoom PDF">
     <button type="button" id="zoomIn" title="Ingrandisci">+</button>
-    <span id="zoomLabel">Adatta</span>
+    <span id="zoomPercent" class="zoom-value">100%</span>
+    <select id="zoomMode" aria-label="Modalità zoom">
+      <option value="custom">Zoom</option>
+      <option value="width" selected>Adatta larghezza</option>
+      <option value="page">Pagina intera</option>
+    </select>
    </div>
   </div>
   <div class="editor-shell">
@@ -471,20 +497,29 @@ function bindEditorControls(){
   await renderSingleEditorPage(page,true);
  });
 
- $("#zoomOut").addEventListener("click",async()=>{
-  editorState.fit=false;editorState.zoom=Math.max(.5,editorState.zoom-.15);
+ const zoomRange=$("#zoomRange"),zoomPercent=$("#zoomPercent"),zoomMode=$("#zoomMode");
+ const setCustomZoom=async value=>{
+  editorState.fitMode="custom";
+  editorState.zoom=Math.max(.5,Math.min(2.5,value));
+  zoomMode.value="custom";zoomRange.value=Math.round(editorState.zoom*100);
+  zoomPercent.textContent=Math.round(editorState.zoom*100)+"%";
   await rerenderEditorWithZoom();
- });
- $("#zoomIn").addEventListener("click",async()=>{
-  editorState.fit=false;editorState.zoom=Math.min(2.5,editorState.zoom+.15);
-  await rerenderEditorWithZoom();
- });
- $("#zoomFit").addEventListener("click",async()=>{
-  editorState.fit=true;await rerenderEditorWithZoom();
- });
+ };
+ $("#zoomOut").addEventListener("click",()=>setCustomZoom((editorState.fitMode==="custom"?editorState.zoom:1)-.1));
+ $("#zoomIn").addEventListener("click",()=>setCustomZoom((editorState.fitMode==="custom"?editorState.zoom:1)+.1));
+ zoomRange.addEventListener("input",()=>{editorState.fitMode="custom";editorState.zoom=Number(zoomRange.value)/100;zoomMode.value="custom";zoomPercent.textContent=zoomRange.value+"%"});
+ zoomRange.addEventListener("change",()=>setCustomZoom(Number(zoomRange.value)/100));
+ zoomMode.addEventListener("change",async()=>{editorState.fitMode=zoomMode.value;await rerenderEditorWithZoom()});
+ $("#editorSidebarToggle").addEventListener("click",async()=>{modal.classList.toggle("sidebar-hidden");await new Promise(r=>setTimeout(r,30));if(editorState.fitMode!=="custom")await rerenderEditorWithZoom()});
  $("#editorSave").addEventListener("click",saveEditedPdf);
 
  const scroller=$("#editorScroll");
+ scroller.addEventListener("wheel",e=>{
+  if(!e.ctrlKey)return;
+  e.preventDefault();
+  const base=editorState.fitMode==="custom"?editorState.zoom:1;
+  setCustomZoom(base+(e.deltaY<0?.1:-.1));
+ },{passive:false});
  let ticking=false;
  scroller.addEventListener("scroll",()=>{
   if(ticking)return;ticking=true;
@@ -510,19 +545,21 @@ function currentVisibleEditorPage(){
  return best;
 }
 
-function editorFitScale(page){
- const scroller=$("#editorScroll");
- const vp=page.getViewport({scale:1});
- const avail=Math.max(280,(scroller?.clientWidth||900)-50);
- return Math.min(1.65,avail/vp.width);
+function editorFitScale(page,mode="width"){
+ const scroller=$("#editorScroll"),vp=page.getViewport({scale:1});
+ const availW=Math.max(280,(scroller?.clientWidth||900)-28),availH=Math.max(320,(scroller?.clientHeight||700)-28);
+ return mode==="page"?Math.min(availW/vp.width,availH/vp.height,2):Math.min(availW/vp.width,2);
 }
 
 async function rerenderEditorWithZoom(){
- const scroller=$("#editorScroll"),p=currentVisibleEditorPage();
+ const p=currentVisibleEditorPage();
  await renderAllEditorPages();
  requestAnimationFrame(()=>document.querySelector(`.editor-page-stage[data-page="${p}"]`)?.scrollIntoView({block:"start"}));
- const label=$("#zoomLabel");
- if(label)label.textContent=editorState.fit?"Adatta":Math.round(editorState.zoom*100)+"%";
+ const zr=$("#zoomRange"),zp=$("#zoomPercent"),zm=$("#zoomMode"),view=editorState.pageViews[p];
+ const pct=editorState.fitMode==="custom"?Math.round(editorState.zoom*100):Math.round((view?.scale||1)*100);
+ if(zr)zr.value=Math.max(50,Math.min(250,pct));
+ if(zp)zp.textContent=pct+"%";
+ if(zm)zm.value=editorState.fitMode;
 }
 
 async function renderAllEditorPages(){
@@ -530,7 +567,7 @@ async function renderAllEditorPages(){
  stack.innerHTML="";
  for(let p=1;p<=editorState.pdf.numPages;p++){
   const page=await editorState.pdf.getPage(p);
-  const scale=editorState.fit?editorFitScale(page):editorState.zoom;
+  const scale=editorState.fitMode!=="custom"?editorFitScale(page,editorState.fitMode):editorState.zoom;
   const vp=page.getViewport({scale});
   editorState.pageViews[p]={scale,width:vp.width,height:vp.height};
 
@@ -558,14 +595,14 @@ async function renderAllEditorPages(){
   await drawEditorOverlayForPage(p);
  }
  updateEditorPointerModes();
- const label=$("#zoomLabel");if(label)label.textContent=editorState.fit?"Adatta":Math.round(editorState.zoom*100)+"%";
+
 }
 
 async function renderSingleEditorPage(pageNum, rebuildText=false){
  const stage=document.querySelector(`.editor-page-stage[data-page="${pageNum}"]`);
  if(!stage)return;
  const page=await editorState.pdf.getPage(pageNum);
- const scale=editorState.fit?editorFitScale(page):editorState.zoom;
+ const scale=editorState.fitMode!=="custom"?editorFitScale(page,editorState.fitMode):editorState.zoom;
  const vp=page.getViewport({scale});
  editorState.pageViews[pageNum]={scale,width:vp.width,height:vp.height};
  stage.style.width=vp.width+"px";stage.style.height=vp.height+"px";
