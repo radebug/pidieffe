@@ -136,24 +136,121 @@ footer{border-top:1px solid var(--line);padding:24px 0;color:var(--muted);font-s
 }
 
 
-/* v13: area di modifica più grande e zoom avanzato */
-.modal.edit-mode .modal-card{width:100vw!important;max-width:none!important;height:100vh!important;max-height:100vh!important;margin:0!important;border-radius:0!important}
-.modal.edit-mode .modal-body{padding:6px 10px 8px!important}
-.modal.edit-mode .editor-shell{grid-template-columns:110px minmax(0,1fr)!important;gap:6px!important;flex:1;min-height:0}
-.modal.edit-mode .editor-sidebar{min-width:0;overflow:hidden}
-.modal.edit-mode .editor-pages{height:100%;max-height:none;overflow-y:auto}
-.modal.edit-mode .editor-main{min-height:0}
-.modal.edit-mode .editor-stage-wrap{height:100%;max-height:none!important;min-height:0;padding:8px!important;overflow:auto!important}
-.modal.edit-mode .editor-toolbar{padding:6px 8px}
-.modal.edit-mode .editor-actions{margin-top:5px}
-.modal.edit-mode .editor-note{margin:4px 0 0}
-.editor-zoom{display:flex;align-items:center;gap:6px;margin-left:auto;min-width:330px}
-.editor-zoom input[type="range"]{width:160px}
-.editor-zoom .zoom-value{width:50px;text-align:right;font-size:12px;font-weight:700}
-.editor-zoom select{min-height:40px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--text);padding:6px}
-.modal.edit-mode.sidebar-hidden .editor-shell{grid-template-columns:0 minmax(0,1fr)!important}
-.modal.edit-mode.sidebar-hidden .editor-sidebar{display:none}
-@media(max-width:850px){.modal.edit-mode .editor-shell{grid-template-columns:80px minmax(0,1fr)!important}.editor-zoom{min-width:220px}.editor-zoom input[type="range"]{width:90px}}
+/* v13 larger workspace + better zoom */
+.modal.edit-mode .modal-card{
+  width:100vw !important;
+  max-width:none !important;
+  height:100vh !important;
+  max-height:none !important;
+  border-radius:0 !important;
+  margin:0 !important;
+}
+.modal.edit-mode .modal-header{
+  padding:8px 12px !important;
+  min-height:50px;
+}
+.modal.edit-mode .modal-body{
+  padding:6px 8px 8px !important;
+}
+.modal.edit-mode .editor-toolbar{
+  padding:6px 7px;
+  gap:4px;
+  border-radius:8px;
+}
+.modal.edit-mode .editor-toolbar button{
+  min-height:32px;
+  padding:5px 7px;
+  font-size:12px;
+}
+.modal.edit-mode .editor-toolbar input[type="number"]{
+  height:32px;
+  padding:4px 6px;
+}
+.modal.edit-mode .editor-toolbar input[type="color"]{
+  width:34px;
+  height:32px;
+}
+.modal.edit-mode .editor-shell{
+  grid-template-columns:90px minmax(0,1fr) !important;
+  gap:6px !important;
+  margin-top:5px !important;
+  flex:1;
+  min-height:0;
+}
+.modal.edit-mode .editor-pages{
+  gap:4px;
+}
+.modal.edit-mode .editor-page-btn{
+  padding:3px;
+  border-radius:6px;
+}
+.modal.edit-mode .editor-page-btn span{
+  font-size:9px;
+  margin-top:2px;
+}
+.modal.edit-mode .editor-main{
+  min-height:0;
+}
+.modal.edit-mode .editor-stage-wrap{
+  padding:8px !important;
+  height:100% !important;
+  max-height:none !important;
+  border-radius:7px;
+}
+.modal.edit-mode .editor-pages-stack{
+  gap:12px;
+}
+.modal.edit-mode .editor-actions{
+  margin-top:5px;
+}
+.modal.edit-mode .editor-actions button{
+  min-height:34px;
+}
+.modal.edit-mode .editor-note{
+  margin:4px 0 0;
+  font-size:10px;
+}
+.editor-zoom input[type="number"]{
+  width:62px !important;
+  text-align:center;
+}
+.editor-zoom .zoom-percent{
+  display:flex;
+  align-items:center;
+  gap:3px;
+  font-size:11px;
+  color:var(--muted);
+}
+@media(max-width:720px){
+  .modal.edit-mode .editor-shell{grid-template-columns:1fr !important}
+  .modal.edit-mode .editor-sidebar{display:none}
+}
+
+
+/* v14 crisp text and browser back */
+.editor-existing-text{
+  color:transparent !important;
+  text-shadow:none !important;
+  background:transparent !important;
+  border-color:transparent !important;
+  caret-color:var(--text);
+}
+.editor-existing-text:hover{
+  color:transparent !important;
+  background:rgba(255,255,255,.08) !important;
+  border-color:rgba(217,65,58,.28) !important;
+}
+.editor-existing-text:focus{
+  color:var(--text) !important;
+  background:rgba(255,255,255,.97) !important;
+  border-color:var(--accent) !important;
+  z-index:12 !important;
+}
+.editor-existing-text.changed{
+  color:var(--text) !important;
+  background:rgba(255,255,255,.97) !important;
+  border-color:rgba(46,125,50,.55) !important;
+}
 
 </style>
 </head>
@@ -302,6 +399,9 @@ function openTool(id){
  toolOptions.innerHTML=optionHtml(id);
  statusText.textContent=["protect","unlock"].includes(id)?"Questa funzione richiede un backend.":"Elaborazione locale nel browser.";
  modal.classList.toggle("edit-mode",id==="edit");
+ if(!history.state?.pidieffeToolOpen){
+   history.pushState({pidieffeToolOpen:true,tool:id},"","#tool-"+id);
+ }
  modal.classList.add("show"); modal.setAttribute("aria-hidden","false");
 }
 $$(".tool-card").forEach(card=>card.addEventListener("click",()=>openTool(card.dataset.id)));
@@ -317,8 +417,23 @@ document.addEventListener("change",e=>{
 });
 
 
-$("#modalClose").onclick=()=>{modal.classList.remove("show","edit-mode");files=[];pageOrderState=[];editorState=null;processBtn.style.display=""};
-modal.addEventListener("click",e=>{if(e.target===modal)$("#modalClose").click()});
+function closeToolModal(fromHistory=false){
+ modal.classList.remove("show","edit-mode");
+ modal.setAttribute("aria-hidden","true");
+ files=[];pageOrderState=[];editorState=null;
+ processBtn.style.display="";
+ if(!fromHistory && history.state?.pidieffeToolOpen){
+   history.back();
+ }
+}
+$("#modalClose").onclick=()=>closeToolModal(false);
+modal.addEventListener("click",e=>{if(e.target===modal)closeToolModal(false)});
+window.addEventListener("popstate",()=>{
+ if(modal.classList.contains("show"))closeToolModal(true);
+});
+window.addEventListener("keydown",e=>{
+ if(e.key==="Escape"&&modal.classList.contains("show"))closeToolModal(false);
+});
 
 $("#toolSearch").addEventListener("input",e=>{
  const q=e.target.value.trim().toLowerCase(); let n=0;
@@ -397,7 +512,7 @@ async function initPdfEditor(file){
 
  editorState={
   file,bytes,pdf,tool:"edittext",color:"#d9413a",fontSize:18,stroke:3,
-  zoom:1,fitMode:"width",ops:{},textEdits:{},newTexts:{},pageViews:{},nextTextId:1
+  zoom:1,fit:true,ops:{},textEdits:{},newTexts:{},pageViews:{},nextTextId:1
  };
  for(let i=1;i<=pdf.numPages;i++){
   editorState.ops[i]=[];
@@ -416,17 +531,14 @@ async function initPdfEditor(file){
    <label title="Dimensione testo"><input id="editorFontSize" type="number" value="18" min="8" max="72" aria-label="Dimensione testo"></label>
    <button type="button" id="editorUndo">↶ Annulla</button>
    <button type="button" id="editorClear">Pulisci pagina</button>
-   <button type="button" id="editorSidebarToggle" title="Mostra/nascondi miniature">☰</button>
    <div class="editor-zoom">
     <button type="button" id="zoomOut" title="Riduci">−</button>
-    <input id="zoomRange" type="range" min="50" max="250" step="10" value="100" aria-label="Zoom PDF">
+    <button type="button" id="zoomFit" title="Adatta alla larghezza">Adatta</button>
     <button type="button" id="zoomIn" title="Ingrandisci">+</button>
-    <span id="zoomPercent" class="zoom-value">100%</span>
-    <select id="zoomMode" aria-label="Modalità zoom">
-      <option value="custom">Zoom</option>
-      <option value="width" selected>Adatta larghezza</option>
-      <option value="page">Pagina intera</option>
-    </select>
+    <label class="zoom-percent" title="Zoom">
+      <input type="number" id="zoomPercent" min="25" max="400" step="10" value="100" aria-label="Zoom percentuale">
+      <span>%</span>
+    </label>
    </div>
   </div>
   <div class="editor-shell">
@@ -441,7 +553,7 @@ async function initPdfEditor(file){
     <div class="editor-actions">
      <button type="button" class="primary-btn" id="editorSave">Salva PDF</button>
     </div>
-    <p class="editor-note">Il testo esistente è cliccabile con “Modifica testo”. “Nuovo testo” crea caselle che puoi riaprire e modificare in qualsiasi momento. Le pagine scorrono verticalmente.</p>
+    <p class="editor-note">Il testo esistente è cliccabile con “Modifica testo”. “Nuovo testo” crea caselle che puoi riaprire e modificare in qualsiasi momento. Le pagine scorrono verticalmente. Usa +/−, la percentuale oppure Ctrl + rotellina per lo zoom.</p>
    </div>
   </div>`;
 
@@ -497,28 +609,33 @@ function bindEditorControls(){
   await renderSingleEditorPage(page,true);
  });
 
- const zoomRange=$("#zoomRange"),zoomPercent=$("#zoomPercent"),zoomMode=$("#zoomMode");
- const setCustomZoom=async value=>{
-  editorState.fitMode="custom";
-  editorState.zoom=Math.max(.5,Math.min(2.5,value));
-  zoomMode.value="custom";zoomRange.value=Math.round(editorState.zoom*100);
-  zoomPercent.textContent=Math.round(editorState.zoom*100)+"%";
+ $("#zoomOut").addEventListener("click",async()=>{
+  editorState.fit=false;editorState.zoom=Math.max(.25,editorState.zoom-.10);
   await rerenderEditorWithZoom();
- };
- $("#zoomOut").addEventListener("click",()=>setCustomZoom((editorState.fitMode==="custom"?editorState.zoom:1)-.1));
- $("#zoomIn").addEventListener("click",()=>setCustomZoom((editorState.fitMode==="custom"?editorState.zoom:1)+.1));
- zoomRange.addEventListener("input",()=>{editorState.fitMode="custom";editorState.zoom=Number(zoomRange.value)/100;zoomMode.value="custom";zoomPercent.textContent=zoomRange.value+"%"});
- zoomRange.addEventListener("change",()=>setCustomZoom(Number(zoomRange.value)/100));
- zoomMode.addEventListener("change",async()=>{editorState.fitMode=zoomMode.value;await rerenderEditorWithZoom()});
- $("#editorSidebarToggle").addEventListener("click",async()=>{modal.classList.toggle("sidebar-hidden");await new Promise(r=>setTimeout(r,30));if(editorState.fitMode!=="custom")await rerenderEditorWithZoom()});
+ });
+ $("#zoomIn").addEventListener("click",async()=>{
+  editorState.fit=false;editorState.zoom=Math.min(4,editorState.zoom+.10);
+  await rerenderEditorWithZoom();
+ });
+ $("#zoomFit").addEventListener("click",async()=>{
+  editorState.fit=true;await rerenderEditorWithZoom();
+ });
+ $("#zoomPercent").addEventListener("change",async e=>{
+  const pct=Math.max(25,Math.min(400,Number(e.target.value)||100));
+  editorState.fit=false;
+  editorState.zoom=pct/100;
+  await rerenderEditorWithZoom();
+ });
  $("#editorSave").addEventListener("click",saveEditedPdf);
 
  const scroller=$("#editorScroll");
- scroller.addEventListener("wheel",e=>{
+ scroller.addEventListener("wheel",async e=>{
   if(!e.ctrlKey)return;
   e.preventDefault();
-  const base=editorState.fitMode==="custom"?editorState.zoom:1;
-  setCustomZoom(base+(e.deltaY<0?.1:-.1));
+  editorState.fit=false;
+  const factor=e.deltaY<0?1.10:0.90;
+  editorState.zoom=Math.max(.25,Math.min(4,editorState.zoom*factor));
+  await rerenderEditorWithZoom();
  },{passive:false});
  let ticking=false;
  scroller.addEventListener("scroll",()=>{
@@ -545,21 +662,19 @@ function currentVisibleEditorPage(){
  return best;
 }
 
-function editorFitScale(page,mode="width"){
- const scroller=$("#editorScroll"),vp=page.getViewport({scale:1});
- const availW=Math.max(280,(scroller?.clientWidth||900)-28),availH=Math.max(320,(scroller?.clientHeight||700)-28);
- return mode==="page"?Math.min(availW/vp.width,availH/vp.height,2):Math.min(availW/vp.width,2);
+function editorFitScale(page){
+ const scroller=$("#editorScroll");
+ const vp=page.getViewport({scale:1});
+ const avail=Math.max(320,(scroller?.clientWidth||1200)-20);
+ return Math.min(2.2,avail/vp.width);
 }
 
 async function rerenderEditorWithZoom(){
- const p=currentVisibleEditorPage();
+ const scroller=$("#editorScroll"),p=currentVisibleEditorPage();
  await renderAllEditorPages();
  requestAnimationFrame(()=>document.querySelector(`.editor-page-stage[data-page="${p}"]`)?.scrollIntoView({block:"start"}));
- const zr=$("#zoomRange"),zp=$("#zoomPercent"),zm=$("#zoomMode"),view=editorState.pageViews[p];
- const pct=editorState.fitMode==="custom"?Math.round(editorState.zoom*100):Math.round((view?.scale||1)*100);
- if(zr)zr.value=Math.max(50,Math.min(250,pct));
- if(zp)zp.textContent=pct+"%";
- if(zm)zm.value=editorState.fitMode;
+ const pct=$("#zoomPercent");
+ if(pct)pct.value=String(Math.round(editorState.fit?100:editorState.zoom*100));
 }
 
 async function renderAllEditorPages(){
@@ -567,7 +682,7 @@ async function renderAllEditorPages(){
  stack.innerHTML="";
  for(let p=1;p<=editorState.pdf.numPages;p++){
   const page=await editorState.pdf.getPage(p);
-  const scale=editorState.fitMode!=="custom"?editorFitScale(page,editorState.fitMode):editorState.zoom;
+  const scale=editorState.fit?editorFitScale(page):editorState.zoom;
   const vp=page.getViewport({scale});
   editorState.pageViews[p]={scale,width:vp.width,height:vp.height};
 
@@ -595,14 +710,14 @@ async function renderAllEditorPages(){
   await drawEditorOverlayForPage(p);
  }
  updateEditorPointerModes();
-
+ const pct=$("#zoomPercent");if(pct)pct.value=String(Math.round(editorState.fit?100:editorState.zoom*100));
 }
 
 async function renderSingleEditorPage(pageNum, rebuildText=false){
  const stage=document.querySelector(`.editor-page-stage[data-page="${pageNum}"]`);
  if(!stage)return;
  const page=await editorState.pdf.getPage(pageNum);
- const scale=editorState.fitMode!=="custom"?editorFitScale(page,editorState.fitMode):editorState.zoom;
+ const scale=editorState.fit?editorFitScale(page):editorState.zoom;
  const vp=page.getViewport({scale});
  editorState.pageViews[pageNum]={scale,width:vp.width,height:vp.height};
  stage.style.width=vp.width+"px";stage.style.height=vp.height+"px";
@@ -648,12 +763,22 @@ async function buildEditableTextLayer(page,vp,pageNum){
   const saved=stored.find(x=>x.id===id);
   const div=document.createElement("div");
   div.className="editor-existing-text"+(saved&&saved.text!==item.str?" changed":"");
-  div.contentEditable="true";div.spellcheck=false;
+  div.contentEditable="true";div.spellcheck=false;div.title="Clicca per modificare questo testo";
   div.dataset.textId=String(id);div.dataset.original=item.str;
   div.textContent=saved?saved.text:item.str;
   div.style.left=left+"px";div.style.top=top+"px";div.style.fontSize=fontHeight+"px";
   div.style.fontFamily="Arial, sans-serif";div.style.transform=`rotate(${angle}rad)`;
   div.style.minWidth=Math.max(8,width)+"px";div.style.height=Math.max(12,fontHeight*1.18)+"px";
+  div.addEventListener("focus",()=>{
+   requestAnimationFrame(()=>{
+    const sel=window.getSelection(),range=document.createRange();
+    if(sel&&document.activeElement===div){
+      range.selectNodeContents(div);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+   });
+  });
   div.addEventListener("input",()=>{
    const text=div.innerText.replace(/\n/g," ");
    const rec={id,original:item.str,text,x:left,y:top,w:Math.max(width,div.offsetWidth),h:Math.max(fontHeight*1.18,div.offsetHeight),size:fontHeight,angle};
