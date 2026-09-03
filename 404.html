@@ -255,7 +255,7 @@ footer{border-top:1px solid var(--line);padding:24px 0;color:var(--muted);font-s
 
 /* v15 */
 .modal.edit-mode .modal-card{width:100vw!important;max-width:none!important;height:100vh!important;max-height:none!important;margin:0!important;border-radius:0!important}
-.modal.edit-mode .modal-close,.modal.edit-mode .modal-icon,.modal.edit-mode #modalTitle,.modal.edit-mode #modalDesc,.modal.edit-mode #dropzone,.modal.edit-mode #fileList,.modal.edit-mode > .modal-card > .primary-btn,.modal.edit-mode > .modal-card > .small-note{display:none!important}
+.modal.edit-mode .modal-close,.modal.edit-mode .modal-icon,.modal.edit-mode #modalTitle,.modal.edit-mode #modalDesc,.modal.edit-mode.editor-loaded #dropzone,.modal.edit-mode.editor-loaded #fileList,.modal.edit-mode.editor-loaded > .modal-card > .primary-btn,.modal.edit-mode.editor-loaded > .modal-card > .small-note{display:none!important}
 .modal.edit-mode #toolOptions,.modal.edit-mode #pdfEditorMount{height:100%;min-height:0}
 .editor-topbar{display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid var(--line);background:var(--surface)}
 .editor-topbar .editor-title{font-weight:800;font-size:14px;margin-right:auto}
@@ -269,6 +269,32 @@ footer{border-top:1px solid var(--line);padding:24px 0;color:var(--muted);font-s
 .modal.edit-mode .editor-stage-wrap{height:100%!important;min-height:0;padding:5px!important}
 .modal.edit-mode .editor-actions{display:none!important}
 .editor-new-text{z-index:20!important;min-width:100px;min-height:28px;padding:3px 5px;border:1px solid var(--accent);background:#fff;color:#111}
+
+/* v18 robust file upload */
+.dropzone{
+  position:relative;
+  cursor:pointer !important;
+  user-select:none;
+}
+.dropzone.dragover{
+  outline:2px dashed var(--accent);
+  outline-offset:2px;
+  transform:translateY(-1px);
+}
+.dropzone input[type="file"]{
+  position:absolute !important;
+  inset:0 !important;
+  width:100% !important;
+  height:100% !important;
+  opacity:0 !important;
+  cursor:pointer !important;
+  display:block !important;
+  z-index:5 !important;
+}
+.modal:not(.edit-mode) #dropzone{
+  display:flex !important;
+}
+
 </style>
 </head>
 <body>
@@ -319,7 +345,7 @@ footer{border-top:1px solid var(--line);padding:24px 0;color:var(--muted);font-s
     <h2 id="modalTitle"></h2>
     <p id="modalDesc"></p>
     <label class="dropzone" id="dropzone">
-      <input id="fileInput" type="file" multiple hidden>
+      <input id="fileInput" type="file" multiple>
       <div class="drop-icon">⇧</div>
       <strong>Trascina i file qui</strong>
       <span>oppure clicca per selezionarli</span>
@@ -412,8 +438,8 @@ function optionHtml(id){
 }
 
 function openTool(id){
- selectedTool=meta[id]; selectedTool.id=id; files=[]; pageOrderState=[]; editorState=null;
- fileInput.value=""; fileInput.accept=selectedTool.accept; refreshFiles();
+ selectedTool=meta[id]; selectedTool.id=id; files=[]; pageOrderState=[]; editorState=null; modal.classList.remove("editor-loaded");
+ fileInput.value=""; fileInput.accept=selectedTool.accept||""; fileInput.multiple=["merge","jpgtopdf"].includes(id); refreshFiles();
  $("#modalIcon").textContent=selectedTool.icon; $("#modalTitle").textContent=selectedTool.name; $("#modalDesc").textContent=selectedTool.desc;
  toolOptions.innerHTML=optionHtml(id);
  statusText.textContent=["protect","unlock"].includes(id)?"Questa funzione richiede un backend.":"Elaborazione locale nel browser.";
@@ -436,7 +462,7 @@ document.addEventListener("change",e=>{
 
 
 function closeToolModal(fromHistory=false){
- modal.classList.remove("show","edit-mode");
+ modal.classList.remove("show","edit-mode","editor-loaded");
  modal.setAttribute("aria-hidden","true");
  files=[];pageOrderState=[];editorState=null;
  processBtn.style.display="";
@@ -449,6 +475,76 @@ window.addEventListener("popstate",()=>{
 });
 window.addEventListener("keydown",e=>{
  if(e.key==="Escape"&&modal.classList.contains("show"))closeToolModal(false);
+});
+
+
+function selectedFilesFromList(list){
+ return Array.from(list||[]).filter(f=>f instanceof File);
+}
+
+async function acceptUploadedFiles(newFiles){
+ const incoming=selectedFilesFromList(newFiles);
+ if(!incoming.length)return;
+
+ const accept=(selectedTool?.accept||"").toLowerCase();
+ let accepted=incoming;
+
+ if(accept.includes("pdf") && !accept.includes("image")){
+   accepted=incoming.filter(f=>f.type==="application/pdf" || /\.pdf$/i.test(f.name));
+ }else if(accept.includes("image")){
+   accepted=incoming.filter(f=>f.type.startsWith("image/") || /\.(jpe?g|png|webp)$/i.test(f.name));
+ }
+
+ if(!accepted.length){
+   statusText.textContent="Il tipo di file selezionato non è supportato da questo strumento.";
+   return;
+ }
+
+ // Most tools accept one file; merge/JPG->PDF can accept many.
+ if(!["merge","jpgtopdf"].includes(selectedTool?.id)){
+   files=[accepted[0]];
+ }else{
+   files=accepted;
+ }
+
+ refreshFiles();
+ statusText.textContent=files.length===1
+   ? `Caricato: ${files[0].name}`
+   : `${files.length} file caricati.`;
+
+ if(selectedTool?.id==="edit"){
+   await initPdfEditor(files[0]);
+ }else{
+   await maybePreview();
+ }
+}
+
+fileInput.addEventListener("change",async e=>{
+ try{await acceptUploadedFiles(e.target.files)}
+ catch(err){console.error(err);statusText.textContent=err.message||"Errore durante il caricamento."}
+});
+
+dropzone.addEventListener("click",e=>{
+ // Input overlay normally receives the click; this is a fallback.
+ if(e.target!==fileInput){
+   try{fileInput.click()}catch(_){}
+ }
+});
+
+dropzone.addEventListener("dragenter",e=>{
+ e.preventDefault();e.stopPropagation();dropzone.classList.add("dragover");
+});
+dropzone.addEventListener("dragover",e=>{
+ e.preventDefault();e.stopPropagation();dropzone.classList.add("dragover");
+});
+dropzone.addEventListener("dragleave",e=>{
+ e.preventDefault();e.stopPropagation();
+ if(!dropzone.contains(e.relatedTarget))dropzone.classList.remove("dragover");
+});
+dropzone.addEventListener("drop",async e=>{
+ e.preventDefault();e.stopPropagation();dropzone.classList.remove("dragover");
+ try{await acceptUploadedFiles(e.dataTransfer?.files)}
+ catch(err){console.error(err);statusText.textContent=err.message||"Errore durante il caricamento."}
 });
 
 $("#toolSearch").addEventListener("input",e=>{
@@ -464,601 +560,7 @@ function prettySize(b){return b<1024?b+" B":b<1048576?(b/1024).toFixed(1)+" KB":
 function refreshFiles(){fileList.innerHTML=files.map(f=>'<div class="file-item"><span>'+esc(f.name)+'</span><span>'+prettySize(f.size)+'</span></div>').join("");processBtn.disabled=!files.length||["protect","unlock","edit"].includes(selectedTool?.id);processBtn.style.display=selectedTool?.id==="edit"?"none":""}
 function esc(s){const d=document.createElement("div");d.textContent=s;return d.innerHTML}
 
-fileInput.addEventListener("change",async e=>{files=[...e.target.files];refreshFiles();await maybePreview();if(selectedTool?.id==="edit"&&files[0])await initPdfEditor(files[0])});
-["dragenter","dragover"].forEach(ev=>dropzone.addEventListener(ev,e=>{e.preventDefault();dropzone.classList.add("drag")}));
-["dragleave","drop"].forEach(ev=>dropzone.addEventListener(ev,e=>{e.preventDefault();dropzone.classList.remove("drag")}));
-dropzone.addEventListener("drop",async e=>{files=[...e.dataTransfer.files];refreshFiles();await maybePreview();if(selectedTool?.id==="edit"&&files[0])await initPdfEditor(files[0])});
 
-function need(lib,msg){if(!lib){statusText.textContent=msg;return false}return true}
-async function ab(f){return await f.arrayBuffer()}
-function download(data,name,type="application/pdf"){const blob=data instanceof Blob?data:new Blob([data],{type});const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)}
-function parseSpec(spec,max){if(!spec.trim())return [...Array(max)].map((_,i)=>i);const out=[];for(const raw of spec.split(",")){const p=raw.trim();if(!p)continue;if(p.includes("-")){let[a,b]=p.split("-").map(Number);if(!a||!b)throw Error("Intervallo non valido");if(a>b)[a,b]=[b,a];for(let i=a;i<=b;i++)out.push(i-1)}else{const n=Number(p);if(!n)throw Error("Pagina non valida");out.push(n-1)}}if(out.some(i=>i<0||i>=max))throw Error("Le pagine devono essere tra 1 e "+max);return out}
-
-processBtn.onclick=async()=>{
- if(!files.length)return;
- const id=selectedTool.id;
- if(["merge","split","extract","rotate","watermark","number","organize"].includes(id)&&!need(window.PDFLib,"Libreria PDF non caricata. Controlla la connessione e ricarica."))return;
- if(["pdfjpg","compress","pdftoword","organize"].includes(id)&&!need(window.pdfjsLib,"Motore PDF non caricato. Controlla la connessione e ricarica."))return;
- if(["jpgtopdf","compress"].includes(id)&&!need(window.jspdf,"Motore immagini/PDF non caricato."))return;
- if(id==="pdftoword"&&!need(window.JSZip,"Motore Word locale non disponibile."))return;
- processBtn.disabled=true; statusText.textContent="Elaborazione in corso...";
- try{
-  if(id==="merge")await mergePDFs();
-  else if(id==="split")await splitPDF();
-  else if(id==="extract")await extractPDF();
-  else if(id==="rotate")await rotatePDF();
-  else if(id==="watermark")await watermarkPDF();
-  else if(id==="number")await numberPDF();
-  else if(id==="organize")await organizePDF();
-  else if(id==="jpgtopdf")await imagesToPdf();
-  else if(id==="pdfjpg")await pdfToJpg();
-  else if(id==="compress")await compressPDF();
-  else if(id==="pdftoword")await pdfToWord();
-  else if(id==="edit")return;
-  statusText.textContent="Operazione completata.";
- }catch(err){console.error(err);statusText.textContent="Errore: "+(err.message||"operazione non riuscita")}
- finally{processBtn.disabled=false}
-};
-
-async function mergePDFs(){const {PDFDocument}=PDFLib,out=await PDFDocument.create();for(const f of files){const src=await PDFDocument.load(await ab(f));const pages=await out.copyPages(src,src.getPageIndices());pages.forEach(p=>out.addPage(p))}download(await out.save(),"pdf-uniti.pdf")}
-async function splitPDF(){const {PDFDocument}=PDFLib,src=await PDFDocument.load(await ab(files[0])),idx=parseSpec($("#pageSpec").value,src.getPageCount());for(const i of idx){const out=await PDFDocument.create(),[p]=await out.copyPages(src,[i]);out.addPage(p);download(await out.save(),"pagina-"+(i+1)+".pdf")}}
-async function extractPDF(){const {PDFDocument}=PDFLib,src=await PDFDocument.load(await ab(files[0])),idx=parseSpec($("#pageSpec").value,src.getPageCount()),out=await PDFDocument.create();(await out.copyPages(src,idx)).forEach(p=>out.addPage(p));download(await out.save(),"pagine-estratte.pdf")}
-async function rotatePDF(){const {PDFDocument,degrees}=PDFLib,doc=await PDFDocument.load(await ab(files[0])),add=Number($("#rotation").value);doc.getPages().forEach(p=>p.setRotation(degrees((p.getRotation().angle+add)%360)));download(await doc.save(),"pdf-ruotato.pdf")}
-async function watermarkPDF(){const {PDFDocument,StandardFonts,rgb,degrees}=PDFLib,doc=await PDFDocument.load(await ab(files[0])),font=await doc.embedFont(StandardFonts.HelveticaBold),text=$("#watermarkText").value||"CONFIDENTIAL",size=Number($("#watermarkSize").value)||48,opacity=Number($("#watermarkOpacity").value)||.18;doc.getPages().forEach(p=>{const {width,height}=p.getSize(),tw=font.widthOfTextAtSize(text,size);p.drawText(text,{x:(width-tw)/2,y:height/2,size,font,color:rgb(.45,.45,.45),opacity,rotate:degrees(35)})});download(await doc.save(),"pdf-filigrana.pdf")}
-async function numberPDF(){const {PDFDocument,StandardFonts,rgb}=PDFLib,doc=await PDFDocument.load(await ab(files[0])),font=await doc.embedFont(StandardFonts.Helvetica),size=Number($("#numberSize").value)||11,top=$("#numberPos").value==="top";doc.getPages().forEach((p,i)=>{const t=String(i+1),{width,height}=p.getSize(),tw=font.widthOfTextAtSize(t,size);p.drawText(t,{x:(width-tw)/2,y:top?height-25:18,size,font,color:rgb(.2,.2,.2)})});download(await doc.save(),"pdf-numerato.pdf")}
-async function organizePDF(){const {PDFDocument}=PDFLib,src=await PDFDocument.load(await ab(files[0])),idx=pageOrderState.length?pageOrderState:[...Array(src.getPageCount())].map((_,i)=>i),out=await PDFDocument.create();(await out.copyPages(src,idx)).forEach(p=>out.addPage(p));download(await out.save(),"pdf-organizzato.pdf")}
-function dataURL(f){return new Promise((res,rej)=>{const r=new FileReader;r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f)})}
-function dims(src){return new Promise((res,rej)=>{const i=new Image;i.onload=()=>res({w:i.naturalWidth,h:i.naturalHeight});i.onerror=rej;i.src=src})}
-async function imagesToPdf(){const {jsPDF}=jspdf;let pdf=null;for(const f of files){const data=await dataURL(f),d=await dims(data),land=d.w>=d.h,w=land?297:210,h=land?210:297;if(!pdf)pdf=new jsPDF({orientation:land?"landscape":"portrait",unit:"mm",format:"a4"});else pdf.addPage("a4",land?"landscape":"portrait");const r=Math.min(w/d.w,h/d.h),iw=d.w*r,ih=d.h*r;pdf.addImage(data,f.type.includes("png")?"PNG":"JPEG",(w-iw)/2,(h-ih)/2,iw,ih)}pdf.save("immagini-convertite.pdf")}
-async function pdfToJpg(){const pdf=await pdfjsLib.getDocument({data:new Uint8Array(await ab(files[0]))}).promise;for(let n=1;n<=pdf.numPages;n++){const p=await pdf.getPage(n),vp=p.getViewport({scale:1.8}),c=document.createElement("canvas");c.width=vp.width;c.height=vp.height;await p.render({canvasContext:c.getContext("2d"),viewport:vp}).promise;const blob=await new Promise(r=>c.toBlob(r,"image/jpeg",.9));download(blob,"pagina-"+n+".jpg","image/jpeg")}}
-async function compressPDF(){const pdf=await pdfjsLib.getDocument({data:new Uint8Array(await ab(files[0]))}).promise,{jsPDF}=jspdf,q=Number($("#quality").value),scale=Number($("#scale").value);let out=null;for(let n=1;n<=pdf.numPages;n++){const p=await pdf.getPage(n),vp=p.getViewport({scale}),c=document.createElement("canvas");c.width=vp.width;c.height=vp.height;await p.render({canvasContext:c.getContext("2d"),viewport:vp}).promise;const img=c.toDataURL("image/jpeg",q),land=vp.width>=vp.height,w=land?297:210,h=land?210:297;if(!out)out=new jsPDF({orientation:land?"landscape":"portrait",unit:"mm",format:"a4",compress:true});else out.addPage("a4",land?"landscape":"portrait");const r=Math.min(w/vp.width,h/vp.height),iw=vp.width*r,ih=vp.height*r;out.addImage(img,"JPEG",(w-iw)/2,(h-ih)/2,iw,ih,undefined,"FAST")}out.save("pdf-compresso.pdf")}
-
-
-
-async function initPdfEditor(file){
- const mount=$("#pdfEditorMount");
- if(!mount)return;
- if(!window.pdfjsLib||!window.PDFLib){
-  mount.innerHTML='<div class="warning-box">Motore PDF non disponibile. Ricarica la pagina e riprova.</div>';
-  return;
- }
- mount.innerHTML='<div class="thumb-empty">Apertura PDF...</div>';
- const bytes=new Uint8Array(await ab(file));
- const pdf=await pdfjsLib.getDocument({data:bytes.slice()}).promise;
-
- editorState={
-  file,bytes,pdf,tool:"edittext",color:"#d9413a",fontSize:18,stroke:3,
-  zoom:1,fit:true,ops:{},textEdits:{},newTexts:{},pageViews:{},nextTextId:1
- };
- for(let i=1;i<=pdf.numPages;i++){
-  editorState.ops[i]=[];
-  editorState.textEdits[i]=[];
-  editorState.newTexts[i]=[];
- }
-
- mount.innerHTML=`
-  <div class="editor-topbar"><button type="button" class="top-action" id="editorBack">← Indietro</button><div class="editor-title">Modifica PDF</div><button type="button" class="top-action top-save" id="editorSaveTop">Salva PDF</button></div>
-  <div class="editor-toolbar" aria-label="Strumenti modifica PDF">
-   <button type="button" data-editor-tool="edittext" class="active">Aa Modifica testo</button>
-   <button type="button" data-editor-tool="text">T Nuovo testo</button>
-   <button type="button" data-editor-tool="whiteout">▭ Correggi</button>
-   <button type="button" data-editor-tool="highlight">▰ Evidenzia</button>
-   <button type="button" data-editor-tool="draw">✎ Disegna</button>
-   <label title="Colore"><input id="editorColor" type="color" value="#d9413a" aria-label="Colore"></label>
-   <label title="Dimensione testo"><input id="editorFontSize" type="number" value="18" min="8" max="72" aria-label="Dimensione testo"></label>
-   <button type="button" id="editorUndo">↶ Annulla</button>
-   <button type="button" id="editorClear">Pulisci pagina</button>
-   <div class="editor-zoom">
-    <button type="button" id="zoomOut" title="Riduci">−</button>
-    <button type="button" id="zoomFit" title="Adatta alla larghezza">Adatta</button>
-    <button type="button" id="zoomIn" title="Ingrandisci">+</button>
-    <label class="zoom-percent" title="Zoom">
-      <input type="number" id="zoomPercent" min="25" max="400" step="10" value="100" aria-label="Zoom percentuale">
-      <span>%</span>
-    </label>
-   </div>
-  </div>
-  <div class="editor-shell">
-   <aside class="editor-sidebar">
-    <strong style="font-size:13px">Pagine</strong>
-    <div class="editor-pages" id="editorPages"></div>
-   </aside>
-   <div class="editor-main">
-    <div class="editor-stage-wrap" id="editorScroll">
-     <div class="editor-pages-stack" id="editorPagesStack"></div>
-    </div>
-    <div class="editor-actions">
-     <button type="button" class="primary-btn" id="editorSave">Salva PDF</button>
-    </div>
-    <p class="editor-note">Il testo esistente è cliccabile con “Modifica testo”. “Nuovo testo” crea caselle che puoi riaprire e modificare in qualsiasi momento. Le pagine scorrono verticalmente. Usa +/−, la percentuale oppure Ctrl + rotellina per lo zoom.</p>
-   </div>
-  </div>`;
-
- bindEditorControls();
- await renderAllEditorPages();
- await buildEditorThumbs();
-}
-
-async function buildEditorThumbs(){
- const host=$("#editorPages"); if(!host||!editorState)return;
- host.innerHTML="";
- for(let n=1;n<=editorState.pdf.numPages;n++){
-  const page=await editorState.pdf.getPage(n),vp=page.getViewport({scale:.16});
-  const c=document.createElement("canvas");
-  c.width=Math.ceil(vp.width);c.height=Math.ceil(vp.height);
-  await page.render({canvasContext:c.getContext("2d"),viewport:vp}).promise;
-  const b=document.createElement("button");
-  b.type="button";b.className="editor-page-btn";b.dataset.page=n;
-  b.appendChild(c);
-  const s=document.createElement("span");s.textContent="Pagina "+n;b.appendChild(s);
-  b.addEventListener("click",()=>{
-   document.querySelector(`.editor-page-stage[data-page="${n}"]`)?.scrollIntoView({behavior:"smooth",block:"start"});
-  });
-  host.appendChild(b);
- }
-}
-
-function bindEditorControls(){
- $$("[data-editor-tool]").forEach(b=>b.addEventListener("click",()=>{
-  editorState.tool=b.dataset.editorTool;
-  $$("[data-editor-tool]").forEach(x=>x.classList.toggle("active",x===b));
-  updateEditorPointerModes();
- }));
-
- $("#editorColor").addEventListener("input",e=>editorState.color=e.target.value);
- $("#editorFontSize").addEventListener("input",e=>editorState.fontSize=Math.max(8,Math.min(72,Number(e.target.value)||18)));
-
- $("#editorUndo").addEventListener("click",async()=>{
-  const page=currentVisibleEditorPage();
-  if(!page)return;
-  if(editorState.ops[page].length)editorState.ops[page].pop();
-  else if(editorState.newTexts[page].length)editorState.newTexts[page].pop();
-  else if(editorState.textEdits[page].length)editorState.textEdits[page].pop();
-  await renderSingleEditorPage(page,true);
- });
-
- $("#editorClear").addEventListener("click",async()=>{
-  const page=currentVisibleEditorPage();
-  if(!page)return;
-  editorState.ops[page]=[];
-  editorState.textEdits[page]=[];
-  editorState.newTexts[page]=[];
-  await renderSingleEditorPage(page,true);
- });
-
- $("#zoomOut").addEventListener("click",async()=>{
-  editorState.fit=false;editorState.zoom=Math.max(.25,editorState.zoom-.10);
-  await rerenderEditorWithZoom();
- });
- $("#zoomIn").addEventListener("click",async()=>{
-  editorState.fit=false;editorState.zoom=Math.min(4,editorState.zoom+.10);
-  await rerenderEditorWithZoom();
- });
- $("#zoomFit").addEventListener("click",async()=>{
-  editorState.fit=true;await rerenderEditorWithZoom();
- });
- $("#zoomPercent").addEventListener("change",async e=>{
-  const pct=Math.max(25,Math.min(400,Number(e.target.value)||100));
-  editorState.fit=false;
-  editorState.zoom=pct/100;
-  await rerenderEditorWithZoom();
- });
- $("#editorSave")?.addEventListener("click",saveEditedPdf);$("#editorSaveTop")?.addEventListener("click",saveEditedPdf);$("#editorBack")?.addEventListener("click",()=>closeToolModal(true));
-
- const scroller=$("#editorScroll");
- scroller.addEventListener("wheel",async e=>{
-  if(!e.ctrlKey)return;
-  e.preventDefault();
-  editorState.fit=false;
-  const factor=e.deltaY<0?1.10:0.90;
-  editorState.zoom=Math.max(.25,Math.min(4,editorState.zoom*factor));
-  await rerenderEditorWithZoom();
- },{passive:false});
- let ticking=false;
- scroller.addEventListener("scroll",()=>{
-  if(ticking)return;ticking=true;
-  requestAnimationFrame(()=>{
-   const p=currentVisibleEditorPage();
-   $$(".editor-page-btn").forEach(b=>b.classList.toggle("active",Number(b.dataset.page)===p));
-   ticking=false;
-  });
- });
-}
-
-function currentVisibleEditorPage(){
- const scroller=$("#editorScroll");
- const stages=$$(".editor-page-stage");
- if(!scroller||!stages.length)return 1;
- const sr=scroller.getBoundingClientRect();
- let best=1,bestDist=Infinity;
- stages.forEach(s=>{
-  const r=s.getBoundingClientRect();
-  const d=Math.abs(r.top-sr.top-12);
-  if(d<bestDist){bestDist=d;best=Number(s.dataset.page)}
- });
- return best;
-}
-
-function editorFitScale(page){
- const scroller=$("#editorScroll");
- const vp=page.getViewport({scale:1});
- const avail=Math.max(320,(scroller?.clientWidth||1200)-20);
- return Math.min(2.2,avail/vp.width);
-}
-
-async function rerenderEditorWithZoom(){
- const scroller=$("#editorScroll"),p=currentVisibleEditorPage();
- await renderAllEditorPages();
- requestAnimationFrame(()=>document.querySelector(`.editor-page-stage[data-page="${p}"]`)?.scrollIntoView({block:"start"}));
- const pct=$("#zoomPercent");
- if(pct)pct.value=String(Math.round(editorState.fit?100:editorState.zoom*100));
-}
-
-async function renderAllEditorPages(){
- const stack=$("#editorPagesStack"); if(!stack)return;
- stack.innerHTML="";
- for(let p=1;p<=editorState.pdf.numPages;p++){
-  const page=await editorState.pdf.getPage(p);
-  const scale=editorState.fit?editorFitScale(page):editorState.zoom;
-  const vp=page.getViewport({scale});
-  editorState.pageViews[p]={scale,width:vp.width,height:vp.height};
-
-  const stage=document.createElement("div");
-  stage.className="editor-page-stage";stage.dataset.page=p;
-  stage.style.width=vp.width+"px";stage.style.height=vp.height+"px";
-  stage.innerHTML=`
-   <canvas class="pdf-page-canvas" data-pdf-page="${p}"></canvas>
-   <div class="editor-text-layer" data-text-layer="${p}"></div>
-   <canvas class="editor-overlay" data-overlay-page="${p}"></canvas>
-   <div class="editor-page-label">Pagina ${p}</div>`;
-  stack.appendChild(stage);
-
-  const canvas=stage.querySelector(".pdf-page-canvas");
-  const overlay=stage.querySelector(".editor-overlay");
-  canvas.width=Math.ceil(vp.width);canvas.height=Math.ceil(vp.height);
-  overlay.width=Math.ceil(vp.width);overlay.height=Math.ceil(vp.height);
-  canvas.style.width=overlay.style.width=vp.width+"px";
-  canvas.style.height=overlay.style.height=vp.height+"px";
-
-  await page.render({canvasContext:canvas.getContext("2d"),viewport:vp}).promise;
-  await buildEditableTextLayer(page,vp,p);
-  renderNewTextsForPage(p);
-  bindPageOverlay(overlay,p);
-  await drawEditorOverlayForPage(p);
- }
- updateEditorPointerModes();
- const pct=$("#zoomPercent");if(pct)pct.value=String(Math.round(editorState.fit?100:editorState.zoom*100));
-}
-
-async function renderSingleEditorPage(pageNum, rebuildText=false){
- const stage=document.querySelector(`.editor-page-stage[data-page="${pageNum}"]`);
- if(!stage)return;
- const page=await editorState.pdf.getPage(pageNum);
- const scale=editorState.fit?editorFitScale(page):editorState.zoom;
- const vp=page.getViewport({scale});
- editorState.pageViews[pageNum]={scale,width:vp.width,height:vp.height};
- stage.style.width=vp.width+"px";stage.style.height=vp.height+"px";
-
- const canvas=stage.querySelector(".pdf-page-canvas"),overlay=stage.querySelector(".editor-overlay");
- canvas.width=Math.ceil(vp.width);canvas.height=Math.ceil(vp.height);
- overlay.width=Math.ceil(vp.width);overlay.height=Math.ceil(vp.height);
- canvas.style.width=overlay.style.width=vp.width+"px";canvas.style.height=overlay.style.height=vp.height+"px";
- await page.render({canvasContext:canvas.getContext("2d"),viewport:vp}).promise;
- await buildEditableTextLayer(page,vp,pageNum);
- renderNewTextsForPage(pageNum);
- await drawEditorOverlayForPage(pageNum);
- updateEditorPointerModes();
-}
-
-function updateEditorPointerModes(){
- $$(".editor-overlay").forEach(o=>{
-  const geometric=["whiteout","highlight","draw","text"].includes(editorState.tool);
-  o.style.pointerEvents=geometric?"auto":"none";
-  o.style.cursor=editorState.tool==="text"?"text":"crosshair";
- });
- $$(".editor-text-layer").forEach(l=>{
-  l.style.pointerEvents=editorState.tool==="edittext"?"auto":"none";
- });
- $$(".editor-existing-text").forEach(x=>x.style.pointerEvents=editorState.tool==="edittext"?"auto":"none");
- $$(".editor-new-text").forEach(x=>x.style.pointerEvents=["edittext","text"].includes(editorState.tool)?"auto":"none");
-}
-
-async function buildEditableTextLayer(page,vp,pageNum){
- const layer=document.querySelector(`[data-text-layer="${pageNum}"]`);if(!layer)return;
- layer.innerHTML="";
- const content=await page.getTextContent();
- const stored=editorState.textEdits[pageNum]||[];
- let idx=0;
- for(const item of content.items){
-  if(!item.str||!item.str.trim())continue;
-  const tx=pdfjsLib.Util.transform(vp.transform,item.transform);
-  const fontHeight=Math.max(8,Math.hypot(tx[2],tx[3]));
-  const angle=Math.atan2(tx[1],tx[0]);
-  const left=tx[4],top=tx[5]-fontHeight;
-  const width=Math.max(4,(item.width||0)*vp.scale);
-  const id=idx++;
-  const saved=stored.find(x=>x.id===id);
-  const div=document.createElement("div");
-  div.className="editor-existing-text"+(saved&&saved.text!==item.str?" changed":"");
-  div.contentEditable="true";div.spellcheck=false;div.title="Clicca per modificare questo testo";
-  div.dataset.textId=String(id);div.dataset.original=item.str;
-  div.textContent=saved?saved.text:item.str;
-  div.style.left=left+"px";div.style.top=top+"px";div.style.fontSize=fontHeight+"px";
-  div.style.fontFamily="Arial, sans-serif";div.style.transform=`rotate(${angle}rad)`;
-  div.style.minWidth=Math.max(8,width)+"px";div.style.height=Math.max(12,fontHeight*1.18)+"px";
-  div.addEventListener("focus",()=>{
-   requestAnimationFrame(()=>{
-    const sel=window.getSelection(),range=document.createRange();
-    if(sel&&document.activeElement===div){
-      range.selectNodeContents(div);
-      sel.removeAllRanges();
-      sel.addRange(range);
-    }
-   });
-  });
-  div.addEventListener("input",()=>{
-   const text=div.innerText.replace(/\n/g," ");
-   const rec={id,original:item.str,text,x:left,y:top,w:Math.max(width,div.offsetWidth),h:Math.max(fontHeight*1.18,div.offsetHeight),size:fontHeight,angle};
-   const arr=editorState.textEdits[pageNum],pos=arr.findIndex(x=>x.id===id);
-   if(pos>=0)arr[pos]=rec;else arr.push(rec);
-   div.classList.toggle("changed",text!==item.str);
-  });
-  layer.appendChild(div);
- }
-}
-
-function renderNewTextsForPage(pageNum){
- const stage=document.querySelector(`.editor-page-stage[data-page="${pageNum}"]`);if(!stage)return;
- stage.querySelectorAll(".editor-new-text").forEach(x=>x.remove());
- const view=editorState.pageViews[pageNum];
- for(const rec of editorState.newTexts[pageNum]){
-  const box=document.createElement("div");
-  box.className="editor-new-text";box.contentEditable="true";box.spellcheck=false;box.dataset.newTextId=rec.id;
-  box.textContent=rec.text||"";box.style.left=rec.x+"px";box.style.top=rec.y+"px";
-  box.style.color=rec.color;box.style.fontSize=rec.size+"px";
-  box.addEventListener("input",()=>{
-   rec.text=box.innerText;rec.w=box.offsetWidth;rec.h=box.offsetHeight;
-  });
-  box.addEventListener("focus",()=>{editorState.tool="text";$$("[data-editor-tool]").forEach(b=>b.classList.toggle("active",b.dataset.editorTool==="text"));updateEditorPointerModes()});
-  stage.appendChild(box);
- }
-}
-
-function createNewText(pageNum,x,y){
- const rec={id:editorState.nextTextId++,text:"",x,y,color:editorState.color,size:editorState.fontSize,w:120,h:28};
- editorState.newTexts[pageNum].push(rec);
- renderNewTextsForPage(pageNum);
- const box=document.querySelector(`.editor-page-stage[data-page="${pageNum}"] .editor-new-text[data-new-text-id="${rec.id}"]`);
- if(box){box.focus();}
- updateEditorPointerModes();
-}
-
-function pointOnOverlay(e,overlay){
- const r=overlay.getBoundingClientRect();
- return{x:(e.clientX-r.left)*(overlay.width/r.width),y:(e.clientY-r.top)*(overlay.height/r.height)};
-}
-
-function rectOp(type,a,b){return{type,x:Math.min(a.x,b.x),y:Math.min(a.y,b.y),w:Math.abs(a.x-b.x),h:Math.abs(a.y-b.y)}}
-
-function bindPageOverlay(overlay,pageNum){
- let drawing=false,start=null,current=null;
- overlay.addEventListener("pointerdown",e=>{
-  const p=pointOnOverlay(e,overlay);
-  if(editorState.tool==="text"){createNewText(pageNum,p.x,p.y);return}
-  if(!["whiteout","highlight","draw"].includes(editorState.tool))return;
-  drawing=true;overlay.setPointerCapture(e.pointerId);start=p;current={points:[p]};
- });
- overlay.addEventListener("pointermove",e=>{
-  if(!drawing)return;const p=pointOnOverlay(e,overlay);
-  if(editorState.tool==="draw")current.points.push(p);else current.end=p;
-  drawEditorOverlayForPage(pageNum,current);
- });
- overlay.addEventListener("pointerup",async e=>{
-  if(!drawing)return;drawing=false;const p=pointOnOverlay(e,overlay);
-  if(editorState.tool==="draw"){
-   if(current.points.length<2)current.points.push(p);
-   editorState.ops[pageNum].push({type:"draw",points:current.points,color:editorState.color,width:editorState.stroke});
-  }else if(editorState.tool==="whiteout"){
-   editorState.ops[pageNum].push(rectOp("whiteout",start,p));
-  }else if(editorState.tool==="highlight"){
-   const op=rectOp("highlight",start,p);op.color=editorState.color;editorState.ops[pageNum].push(op);
-  }
-  current=null;await drawEditorOverlayForPage(pageNum);
- });
-}
-
-async function drawEditorOverlayForPage(pageNum,preview=null){
- const c=document.querySelector(`[data-overlay-page="${pageNum}"]`);if(!c)return;
- const ctx=c.getContext("2d");ctx.clearRect(0,0,c.width,c.height);
- const ops=[...(editorState.ops[pageNum]||[])];if(preview)ops.push(preview);
- for(const op of ops){
-  if(op.type==="whiteout"){ctx.fillStyle="#fff";ctx.fillRect(op.x,op.y,op.w,op.h)}
-  else if(op.type==="highlight"){ctx.save();ctx.globalAlpha=.28;ctx.fillStyle=op.color||"#ffff00";ctx.fillRect(op.x,op.y,op.w,op.h);ctx.restore()}
-  else if(op.type==="draw"&&op.points?.length){
-   ctx.strokeStyle=op.color||"#000";ctx.lineWidth=op.width||3;ctx.lineCap="round";ctx.lineJoin="round";
-   ctx.beginPath();ctx.moveTo(op.points[0].x,op.points[0].y);
-   for(let i=1;i<op.points.length;i++)ctx.lineTo(op.points[i].x,op.points[i].y);ctx.stroke();
-  }
- }
-}
-
-function hexRgb(hex){
- const h=(hex||"#000000").replace("#","");
- return{r:parseInt(h.slice(0,2),16)/255,g:parseInt(h.slice(2,4),16)/255,b:parseInt(h.slice(4,6),16)/255};
-}
-
-async function saveEditedPdf(){
- if(!editorState)return;
- statusText.textContent="Ricostruzione PDF modificato...";
- const source=await PDFLib.PDFDocument.load(editorState.bytes.slice());
- const out=await PDFLib.PDFDocument.create();
-
- for(let p=1;p<=source.getPageCount();p++){
-  const changed=(editorState.textEdits[p]||[]).some(x=>x.text!==x.original)||(editorState.newTexts[p]||[]).some(x=>x.text?.trim())||(editorState.ops[p]||[]).length>0;
-  if(!changed){
-   const [cp]=await out.copyPages(source,[p-1]);
-   out.addPage(cp);
-   continue;
-  }
-  const pdfPage=await editorState.pdf.getPage(p);
-  const renderVp=pdfPage.getViewport({scale:2.2});
-  const canvas=document.createElement("canvas");
-  canvas.width=Math.ceil(renderVp.width);canvas.height=Math.ceil(renderVp.height);
-  const ctx=canvas.getContext("2d");
-  await pdfPage.render({canvasContext:ctx,viewport:renderVp}).promise;
-
-  const view=editorState.pageViews[p]||{width:renderVp.width/2.2,height:renderVp.height/2.2};
-  const sx=canvas.width/view.width,sy=canvas.height/view.height;
-
-  for(const ed of editorState.textEdits[p]||[]){
-   if(ed.text===ed.original)continue;
-   ctx.fillStyle="#fff";ctx.fillRect(ed.x*sx,ed.y*sy,Math.max(2,ed.w*sx),Math.max(2,ed.h*sy));
-   ctx.fillStyle="#111";ctx.textBaseline="top";ctx.font=`${Math.max(8,ed.size*sy)}px Arial`;
-   ctx.fillText(ed.text||"",ed.x*sx,ed.y*sy);
-  }
-
-  for(const nt of editorState.newTexts[p]||[]){
-   if(!nt.text?.trim())continue;
-   ctx.fillStyle=nt.color||"#000";ctx.textBaseline="top";ctx.font=`${Math.max(8,nt.size*sy)}px Arial`;
-   nt.text.split(/\n/).forEach((line,i)=>ctx.fillText(line,nt.x*sx,(nt.y+i*nt.size*1.15)*sy));
-  }
-
-  for(const op of editorState.ops[p]||[]){
-   if(op.type==="whiteout"){ctx.fillStyle="#fff";ctx.fillRect(op.x*sx,op.y*sy,op.w*sx,op.h*sy)}
-   else if(op.type==="highlight"){ctx.save();ctx.globalAlpha=.28;ctx.fillStyle=op.color||"#ff0";ctx.fillRect(op.x*sx,op.y*sy,op.w*sx,op.h*sy);ctx.restore()}
-   else if(op.type==="draw"&&op.points?.length>1){
-    ctx.strokeStyle=op.color||"#000";ctx.lineWidth=(op.width||3)*sx;ctx.lineCap="round";ctx.lineJoin="round";ctx.beginPath();ctx.moveTo(op.points[0].x*sx,op.points[0].y*sy);
-    for(let i=1;i<op.points.length;i++)ctx.lineTo(op.points[i].x*sx,op.points[i].y*sy);
-    ctx.stroke();
-   }
-  }
-
-  const jpg=canvas.toDataURL("image/jpeg",0.96);
-  const img=await out.embedJpg(jpg);
-  const {width,height}=source.getPage(p-1).getSize();
-  const np=out.addPage([width,height]);
-  np.drawImage(img,{x:0,y:0,width,height});
- }
- const bytes=await out.save();
- download(bytes,editorState.file.name.replace(/\.pdf$/i,"")+"-modificato.pdf");
- statusText.textContent="PDF modificato pronto.";
-}
-async function maybePreview(){
- if(selectedTool?.id!=="organize"||!files.length)return;
- const host=$("#pageThumbs");if(!host)return;
- if(!window.pdfjsLib){host.innerHTML='<div class="thumb-empty">PDF.js non caricato.</div>';return}
- host.innerHTML='<div class="thumb-empty">Generazione miniature…</div>';
- try{
-  const pdf=await pdfjsLib.getDocument({data:new Uint8Array(await ab(files[0]))}).promise;
-  pageOrderState=[...Array(pdf.numPages)].map((_,i)=>i);host.innerHTML="";
-  for(let n=1;n<=pdf.numPages;n++){
-   const page=await pdf.getPage(n),base=page.getViewport({scale:1}),vp=page.getViewport({scale:Math.min(.55,150/base.width)}),canvas=document.createElement("canvas");
-   canvas.width=Math.ceil(vp.width);canvas.height=Math.ceil(vp.height);await page.render({canvasContext:canvas.getContext("2d"),viewport:vp}).promise;
-   const item=document.createElement("div");item.className="page-thumb";item.draggable=true;item.dataset.pageIndex=n-1;
-   item.innerHTML='<div class="thumb-handle">⋮⋮</div><div class="thumb-canvas-wrap"></div><div class="thumb-meta"><span>Pagina '+n+'</span><span class="thumb-pos">#'+n+'</span></div>';
-   item.querySelector(".thumb-canvas-wrap").appendChild(canvas);bindDnD(item);host.appendChild(item);
-  }
- }catch(e){host.innerHTML='<div class="thumb-empty">Errore nella generazione delle miniature.</div>'}
-}
-let dragged=null;
-function bindDnD(item){
- item.addEventListener("dragstart",e=>{dragged=item;item.classList.add("dragging");e.dataTransfer.effectAllowed="move"});
- item.addEventListener("dragend",()=>{item.classList.remove("dragging");dragged=null;syncOrder()});
- item.addEventListener("dragover",e=>{e.preventDefault();if(!dragged||dragged===item)return;const r=item.getBoundingClientRect(),host=$("#pageThumbs");if(e.clientX<r.left+r.width/2)host.insertBefore(dragged,item);else host.insertBefore(dragged,item.nextSibling);updatePositions()});
-}
-function syncOrder(){pageOrderState=$$("#pageThumbs .page-thumb").map(n=>Number(n.dataset.pageIndex));updatePositions()}
-function updatePositions(){$$("#pageThumbs .page-thumb").forEach((el,i)=>{const p=el.querySelector(".thumb-pos");if(p)p.textContent="#"+(i+1)})}
-
-function xmlEscape(s){
- return String(s)
-  .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
-  .replace(/"/g,"&quot;").replace(/'/g,"&apos;");
-}
-function dataUrlToUint8(dataUrl){
- const bin=atob(dataUrl.split(",")[1]), arr=new Uint8Array(bin.length);
- for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
- return arr;
-}
-function emuFromPx(px){ return Math.round(px*9525); }
-
-function addDocxBase(zip,title){
- zip.file("[Content_Types].xml",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
- <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
- <Default Extension="xml" ContentType="application/xml"/>
- <Default Extension="jpg" ContentType="image/jpeg"/>
- <Default Extension="jpeg" ContentType="image/jpeg"/>
- <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
- <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
- <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
-</Types>`);
- zip.folder("_rels").file(".rels",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
- <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
- <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
- <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
-</Relationships>`);
- const now=new Date().toISOString();
- zip.folder("docProps").file("core.xml",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
- xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/"
- xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
- <dc:title>${xmlEscape(title)}</dc:title><dc:creator>PIDIEFFE — Powered by RAdebug</dc:creator>
- <dcterms:created xsi:type="dcterms:W3CDTF">${now}</dcterms:created>
- <dcterms:modified xsi:type="dcterms:W3CDTF">${now}</dcterms:modified>
-</cp:coreProperties>`);
- zip.folder("docProps").file("app.xml",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"
- xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>PIDIEFFE</Application></Properties>`);
-}
-
-async function pdfToWord(){
- const mode=$("#wordMode")?.value||"wasm";
- if(mode==="layout") return pdfToWordLayout();
- return pdfToWordWasm();
-}
-
-const PIDIEFFE_CONVERTER_URL="https://erseco.github.io/document-converter/";
-let pidieffeConverterReady=false;
-let pidieffeConverterWaiters=[];
-let pidieffeConversionRequests=new Map();
-
-function ensurePidieffeConverter(){
- let iframe=document.getElementById("pidieffeConverterFrame");
- if(!iframe){
-   iframe=document.createElement("iframe");
-   iframe.id="pidieffeConverterFrame";
-   iframe.src=PIDIEFFE_CONVERTER_URL;
-   iframe.title="PIDIEFFE document conversion engine";
-   iframe.setAttribute("aria-hidden","true");
-   iframe.style.cssText="position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;left:-10000px;top:-10000px;border:0";
-   document.body.appendChild(iframe);
- }
- return iframe;
-}
-
-window.addEventListener("message",(event)=>{
- if(event.origin!=="https://erseco.github.io") return;
- const data=event.data||{};
- if(data.type==="ready"){
-   pidieffeConverterReady=true;
-   for(const w of pidieffeConverterWaiters.splice(0)) w.resolve();
-   return;
- }
- if(data.type==="result" && data.requestId && pidieffeConversionRequests.has(data.requestId)){
-   const req=pidieffeConversionRequests.get(data.requestId);
-   clearTimeout(req.timer);
-   pidieffeConversionRequests.delete(data.requestId);
-   req.resolve(new Blob([data.data],{type:data.mimeType||"application/vnd.openxmlformats-officedocument.wordprocessingml.document"}));
-   return;
- }
- if(data.type==="error" && data.requestId && pidieffeConversionRequests.has(data.requestId)){
-   const req=pidieffeConversionRequests.get(data.requestId);
-   clearTimeout(req.timer);
-   pidieffeConversionRequests.delete(data.requestId);
-   req.reject(new Error(data.error||"Conversione non riuscita."));
- }
-});
 
 function waitPidieffeConverter(timeout=90000){
  ensurePidieffeConverter();
