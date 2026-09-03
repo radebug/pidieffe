@@ -438,7 +438,16 @@ footer{border-top:1px solid var(--line);padding:24px 0;color:var(--muted);font-s
 <footer><div class="container footer-inner"><span>PIDIEFFE</span><span>Powered by <strong>RAdebug</strong> · conversioni locali nel browser</span></div></footer>
 
 <!-- Librerie: se una CDN fallisce, le card restano comunque visibili -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script 
+function openAdvancedPdfEditor(){
+  const url="https://app.elasticpdf.com/";
+  const w=window.open(url,"_blank","noopener,noreferrer");
+  if(!w){
+    alert("Il browser ha bloccato la nuova scheda. Consenti i popup per PIDIEFFE e riprova.");
+  }
+}
+
+src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 
@@ -516,6 +525,8 @@ function optionHtml(id){
 }
 
 function openTool(id){
+ if(id==="edit"){openAdvancedPdfEditor();return;}
+
  selectedTool=meta[id]; selectedTool.id=id; files=[]; pageOrderState=[]; editorState=null; modal.classList.remove("editor-loaded");
  fileInput.value=""; fileInput.accept=selectedTool.accept; refreshFiles();
  $("#modalIcon").textContent=selectedTool.icon; $("#modalTitle").textContent=selectedTool.name; $("#modalDesc").textContent=selectedTool.desc;
@@ -1633,5 +1644,9 @@ async function pdfToWordEditable(){
 
 
 </script>
+
+<div style="max-width:1100px;margin:12px auto 28px;padding:0 18px;color:#666;font-size:12px;line-height:1.45">
+  L’editor avanzato viene aperto in una nuova scheda. Il file viene selezionato nell’editor e lavorato localmente nel browser.
+</div>
 </body>
 </html>
