@@ -688,7 +688,7 @@ async function initPdfEditor(file){
   <div class="editor-toolbar" aria-label="Strumenti modifica PDF">
    <button type="button" data-editor-tool="edittext" class="active">Aa Modifica testo</button>
    <button type="button" data-editor-tool="text">T Nuovo testo</button>
-<button type="button" data-editor-tool="image" title="Aggiungi immagine">🖼 Immagine</button>
+<button type="button" id="editorAddImage" title="Aggiungi immagine">🖼 Immagine</button>
    <button type="button" data-editor-tool="whiteout">▭ Correggi</button>
    <button type="button" data-editor-tool="highlight">▰ Evidenzia</button>
    <button type="button" data-editor-tool="draw">✎ Disegna</button>
@@ -706,7 +706,7 @@ async function initPdfEditor(file){
     <button type="button" class="format-toggle" id="editorItalic" title="Corsivo"><em>I</em></button>
     <label title="Colore"><input id="editorColor" type="color" value="#d9413a" aria-label="Colore"></label>
    </div>
-   <button type="button" id="editorUndo">↶ Annulla</button><input id="editorImageInput" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+   <button type="button" id="editorUndo">↶ Annulla</button><input id="editorImageInput" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" aria-label="Scegli immagine" style="position:absolute;left:-10000px;top:0;width:1px;height:1px;opacity:0">
    <button type="button" id="editorClear">Pulisci pagina</button>
    <div class="editor-zoom">
     <button type="button" id="zoomOut" title="Riduci">−</button>
@@ -790,7 +790,36 @@ function applyToolbarStyleToSelected(){
 
 function bindEditorControls(){
  const imageInput=$("#editorImageInput");
- imageInput?.addEventListener("change",e=>{const f=e.target.files?.[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{const im=new Image();im.onload=()=>addImageToPage(editorState.currentPage,rd.result,im.naturalWidth,im.naturalHeight);im.src=rd.result};rd.readAsDataURL(f);e.target.value=""});
+ const addImageBtn=$("#editorAddImage");
+ if(addImageBtn && imageInput){
+   addImageBtn.addEventListener("click",e=>{
+     e.preventDefault();
+     e.stopPropagation();
+     imageInput.value="";
+     imageInput.click();
+   });
+   imageInput.addEventListener("change",e=>{
+     const f=e.target.files && e.target.files[0];
+     if(!f)return;
+     if(!/^image\/(png|jpeg|webp)$/i.test(f.type) && !/\.(png|jpe?g|webp)$/i.test(f.name)){
+       statusText.textContent="Formato immagine non supportato. Usa PNG, JPG o WebP.";
+       return;
+     }
+     const page=editorState.currentPage||1;
+     const rd=new FileReader();
+     rd.onerror=()=>statusText.textContent="Impossibile leggere l’immagine.";
+     rd.onload=()=>{
+       const im=new Image();
+       im.onerror=()=>statusText.textContent="Impossibile aprire l’immagine.";
+       im.onload=()=>{
+         addImageToPage(page,rd.result,im.naturalWidth,im.naturalHeight);
+         statusText.textContent="Immagine aggiunta. Usa ⠿ per spostarla e il quadratino in basso a destra per ridimensionarla.";
+       };
+       im.src=rd.result;
+     };
+     rd.readAsDataURL(f);
+   });
+ }
 
  $$("[data-editor-tool]").forEach(b=>b.addEventListener("click",()=>{
   editorState.tool=b.dataset.editorTool;
@@ -1034,7 +1063,7 @@ function renderImagesForPage(pageNum){
   const mv=document.createElement("button");mv.type="button";mv.className="image-move";mv.textContent="⠿";
   const del=document.createElement("button");del.type="button";del.className="image-delete";del.textContent="×";
   const rs=document.createElement("div");rs.className="image-resize";
-  const select=()=>{editorState.selectedImage={page:pageNum,id:rec.id};stage.querySelectorAll(".editor-added-image").forEach(x=>x.classList.toggle("selected",x===el))};
+  const select=()=>{editorState.selectedImage={page:pageNum,id:rec.id};stage.querySelectorAll(".editor-added-image").forEach(x=>x.classList.toggle("selected",x===el));};
   el.addEventListener("pointerdown",e=>{e.stopPropagation();select()});
   let d=null;
   mv.addEventListener("pointerdown",e=>{e.preventDefault();e.stopPropagation();select();d={id:e.pointerId,sx:e.clientX,sy:e.clientY,x:rec.x,y:rec.y};mv.setPointerCapture(e.pointerId)});
