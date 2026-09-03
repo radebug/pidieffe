@@ -1,0 +1,85 @@
+name: Deploy PIDIEFFE to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Prepare site
+        run: |
+          set -e
+          rm -rf _site
+          mkdir -p _site/converter/vendor/zetajs _site/converter/wasm
+
+          cp index.html _site/index.html
+          cp 404.html _site/404.html
+          touch _site/.nojekyll
+
+      - name: Download converter source
+        run: |
+          set -e
+          curl -fL --retry 3 \
+            https://raw.githubusercontent.com/erseco/document-converter/refs/heads/main/docs/index.html \
+            -o _site/converter/index.html
+          curl -fL --retry 3 \
+            https://raw.githubusercontent.com/erseco/document-converter/refs/heads/main/docs/converter.js \
+            -o _site/converter/converter.js
+          curl -fL --retry 3 \
+            https://raw.githubusercontent.com/erseco/document-converter/refs/heads/main/docs/coi-serviceworker.js \
+            -o _site/converter/coi-serviceworker.js
+
+      - name: Install ZetaJS
+        run: |
+          set -e
+          npm install --no-save --ignore-scripts zetajs@1.2.0
+          cp node_modules/zetajs/source/zeta.js _site/converter/vendor/zetajs/
+          cp node_modules/zetajs/source/zetaHelper.js _site/converter/vendor/zetajs/
+
+      - name: Download LibreOffice WASM
+        run: |
+          set -e
+          BASE="https://cdn.zetaoffice.net/zetaoffice_latest"
+          for FILE in soffice.js soffice.wasm soffice.data soffice.data.js.metadata; do
+            echo "Downloading $FILE"
+            curl -fL --retry 3 "$BASE/$FILE" -o "_site/converter/wasm/$FILE"
+          done
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

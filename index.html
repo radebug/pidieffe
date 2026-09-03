@@ -486,7 +486,7 @@ function optionHtml(id){
  if(id==="compress") return '<div class="option-row"><label>Qualità JPG<select id="quality"><option value=".55">Alta compressione</option><option value=".72" selected>Bilanciata</option><option value=".88">Alta qualità</option></select></label><label>Risoluzione<select id="scale"><option value="1">Standard</option><option value="1.4" selected>Buona</option><option value="2">Alta</option></select></label></div><div class="warning-box">La compressione rasterizza le pagine: il testo non rimane selezionabile.</div>';
  if(id==="pdftoword") return `
  <div class="warning-box" id="wordModeHelp">
-   <strong>PDF → Word:</strong> apre il motore LibreOffice WebAssembly in una finestra dedicata. Al primo avvio il caricamento può richiedere più tempo.
+   <strong>PDF → Word:</strong> conversione locale nel browser con LibreOffice WebAssembly. Al primo utilizzo il motore può richiedere più tempo per inizializzarsi.
  </div>
  <div class="option-row">
    <label>Formato
@@ -523,7 +523,7 @@ document.addEventListener("change",e=>{
    const help=$("#wordModeHelp"); if(!help)return;
    help.innerHTML=e.target.value==="layout"
     ? "<strong>Copia visiva:</strong> mantiene l’aspetto del PDF inserendo le pagine come immagini. È fedele visivamente ma il contenuto non è realmente editabile."
-    : "<strong>PDF → Word:</strong> usa la finestra dedicata di LibreOffice WebAssembly per tentare la conversione in DOCX modificabile.";
+    : "<strong>PDF → Word:</strong> usa LibreOffice WebAssembly ospitato nello stesso sito PIDIEFFE per generare il DOCX.";
   }
 });
 
@@ -1330,7 +1330,8 @@ async function pdfToWord(){
  return pdfToWordWasm();
 }
 
-const PIDIEFFE_CONVERTER_URL="https://erseco.github.io/document-converter/";
+const PIDIEFFE_CONVERTER_URL=new URL("./converter/",window.location.href).href;
+const PIDIEFFE_CONVERTER_ORIGIN=window.location.origin;
 let pidieffeConverterReady=false;
 let pidieffeConverterWaiters=[];
 let pidieffeConversionRequests=new Map();
@@ -1343,14 +1344,14 @@ function ensurePidieffeConverter(){
    iframe.src=PIDIEFFE_CONVERTER_URL;
    iframe.title="PIDIEFFE document conversion engine";
    iframe.setAttribute("aria-hidden","true");
-   iframe.style.cssText="position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;left:-10000px;top:-10000px;border:0";
+   iframe.style.cssText="position:absolute;width:320px;height:240px;opacity:0.001;pointer-events:none;left:-5000px;top:0;border:0";
    document.body.appendChild(iframe);
  }
  return iframe;
 }
 
 window.addEventListener("message",(event)=>{
- if(event.origin!=="https://erseco.github.io") return;
+ if(event.origin!==PIDIEFFE_CONVERTER_ORIGIN) return;
  const data=event.data||{};
  if(data.type==="ready"){
    pidieffeConverterReady=true;
@@ -1372,7 +1373,7 @@ window.addEventListener("message",(event)=>{
  }
 });
 
-function waitPidieffeConverter(timeout=90000){
+function waitPidieffeConverter(timeout=180000){
  ensurePidieffeConverter();
  if(pidieffeConverterReady) return Promise.resolve();
  return new Promise((resolve,reject)=>{
@@ -1386,7 +1387,7 @@ function waitPidieffeConverter(timeout=90000){
  });
 }
 
-function convertWithPidieffeWasm(buffer,format="docx",timeout=180000){
+function convertWithPidieffeWasm(buffer,format="docx",timeout=240000){
  const iframe=ensurePidieffeConverter();
  return new Promise((resolve,reject)=>{
    const requestId="pidieffe_"+Date.now()+"_"+Math.random().toString(36).slice(2);
@@ -1400,118 +1401,27 @@ function convertWithPidieffeWasm(buffer,format="docx",timeout=180000){
      buffer,
      format,
      requestId
-   },"https://erseco.github.io");
+   },PIDIEFFE_CONVERTER_ORIGIN);
  });
 }
 
 async function pdfToWordWasm(){
  const file=files[0];
  if(!file)throw new Error("Carica un PDF.");
-
- // GitHub Pages + LibreOffice WASM needs its own isolated page/Service Worker.
- // Open it synchronously from the user click so popup blockers do not stop it.
- const converterUrl="https://erseco.github.io/document-converter/?receive=opener";
- const win=window.open(converterUrl,"pidieffeLibreOffice","width=980,height=760");
- if(!win){
-   throw new Error("Il browser ha bloccato la finestra di LibreOffice. Consenti i popup per PIDIEFFE e riprova.");
- }
-
- statusText.textContent="Avvio LibreOffice WebAssembly…";
-
+ statusText.textContent="Avvio LibreOffice WebAssembly...";
+ await waitPidieffeConverter();
+ statusText.textContent="Conversione PDF → Word in corso...";
  const buffer=await file.arrayBuffer();
-
- await new Promise((resolve,reject)=>{
-   let sent=false;
-   const timeout=setTimeout(()=>{
-     cleanup();
-     reject(new Error("LibreOffice WebAssembly non si è avviato entro 90 secondi. Chiudi la finestra del convertitore, ricarica PIDIEFFE e riprova."));
-   },90000);
-
-   function cleanup(){
-     clearTimeout(timeout);
-     window.removeEventListener("message",handler);
-   }
-
-   function handler(event){
-     if(event.origin!=="https://erseco.github.io")return;
-     const data=event.data||{};
-
-     // Receiver mode documented by the upstream project.
-     if(data.type==="converterReady" && !sent){
-       sent=true;
-       statusText.textContent="Conversione PDF → Word in corso…";
-       win.postMessage({
-         type:"convertDocument",
-         buffer,
-         name:file.name,
-         format:"docx",
-         fullscreen:false
-       },"https://erseco.github.io");
-       // In receiver mode the converter owns the resulting download/UI.
-       // Keep listening briefly for an optional error/result response.
-       return;
-     }
-
-     // Some builds use the iframe protocol even in a popup.
-     if(data.type==="ready" && !sent){
-       sent=true;
-       statusText.textContent="Conversione PDF → Word in corso…";
-       win.postMessage({
-         type:"convert",
-         buffer,
-         format:"docx",
-         requestId:"pidieffe_"+Date.now()
-       },"https://erseco.github.io");
-       return;
-     }
-
-     if(data.type==="error"){
-       cleanup();
-       reject(new Error(data.error||"LibreOffice non è riuscito a convertire questo PDF."));
-       return;
-     }
-
-     if(data.type==="result" && data.data){
-       cleanup();
-       const blob=new Blob([data.data],{
-         type:data.mimeType||"application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-       });
-       const url=URL.createObjectURL(blob);
-       const a=document.createElement("a");
-       a.href=url;
-       a.download=file.name.replace(/\.pdf$/i,"")+".docx";
-       document.body.appendChild(a);a.click();a.remove();
-       setTimeout(()=>URL.revokeObjectURL(url),2000);
-       statusText.textContent="Word pronto.";
-       resolve();
-     }
-   }
-
-   window.addEventListener("message",handler);
-
-   // Receiver page may have loaded extremely quickly; ping both protocols.
-   setTimeout(()=>{
-     if(!sent && !win.closed){
-       try{win.postMessage({type:"ping",requestId:"pidieffe_ping_"+Date.now()},"https://erseco.github.io")}catch(_){}
-     }
-   },2500);
-
-   // Once the file has been handed off, don't keep PIDIEFFE blocked forever.
-   const handoffCheck=setInterval(()=>{
-     if(sent){
-       clearInterval(handoffCheck);
-       setTimeout(()=>{
-         cleanup();
-         statusText.textContent="Conversione avviata nella finestra LibreOffice.";
-         resolve();
-       },1500);
-     }else if(win.closed){
-       clearInterval(handoffCheck);
-       cleanup();
-       reject(new Error("La finestra LibreOffice è stata chiusa prima dell’avvio."));
-     }
-   },400);
- });
+ const blob=await convertWithPidieffeWasm(buffer,"docx");
+ const url=URL.createObjectURL(blob);
+ const a=document.createElement("a");
+ a.href=url;
+ a.download=file.name.replace(/\.pdf$/i,"")+".docx";
+ document.body.appendChild(a);
+ a.click();
+ a.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),2000);
+ statusText.textContent="Word pronto.";
 }
 async function pdfToWordLayout(){
  const pdf=await pdfjsLib.getDocument({data:new Uint8Array(await ab(files[0]))}).promise;
@@ -1599,7 +1509,9 @@ async function pdfToWordEditable(){
 
 })();
 
-
+window.addEventListener("load",()=>{
+ setTimeout(()=>{try{ensurePidieffeConverter()}catch(e){}},1200);
+});
 
 </script>
 </body>
