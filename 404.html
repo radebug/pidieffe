@@ -486,12 +486,12 @@ function optionHtml(id){
  if(id==="compress") return '<div class="option-row"><label>Qualità JPG<select id="quality"><option value=".55">Alta compressione</option><option value=".72" selected>Bilanciata</option><option value=".88">Alta qualità</option></select></label><label>Risoluzione<select id="scale"><option value="1">Standard</option><option value="1.4" selected>Buona</option><option value="2">Alta</option></select></label></div><div class="warning-box">La compressione rasterizza le pagine: il testo non rimane selezionabile.</div>';
  if(id==="pdftoword") return `
  <div class="warning-box" id="wordModeHelp">
-   <strong>PDF → Word:</strong> conversione locale nel browser con LibreOffice WebAssembly. Al primo utilizzo il motore può richiedere più tempo per inizializzarsi.
+   <strong>PDF → Word:</strong> conversione eseguita direttamente nel browser con Ream. Nessun server, nessun account e nessun caricamento esterno del PDF.
  </div>
  <div class="option-row">
    <label>Formato
      <select id="wordMode">
-       <option value="wasm" selected>DOCX modificabile</option>
+       <option value="ream" selected>DOCX modificabile</option>
        <option value="layout">Copia visiva nel Word</option>
      </select>
    </label>
@@ -523,7 +523,7 @@ document.addEventListener("change",e=>{
    const help=$("#wordModeHelp"); if(!help)return;
    help.innerHTML=e.target.value==="layout"
     ? "<strong>Copia visiva:</strong> mantiene l’aspetto del PDF inserendo le pagine come immagini. È fedele visivamente ma il contenuto non è realmente editabile."
-    : "<strong>PDF → Word:</strong> usa LibreOffice WebAssembly ospitato nello stesso sito PIDIEFFE per generare il DOCX.";
+    : "<strong>PDF → Word:</strong> Ream legge il PDF e genera un DOCX modificabile direttamente nel browser.";
   }
 });
 
@@ -1325,104 +1325,65 @@ function addDocxBase(zip,title){
 }
 
 async function pdfToWord(){
- const mode=$("#wordMode")?.value||"wasm";
+ const mode=$("#wordMode")?.value||"ream";
  if(mode==="layout") return pdfToWordLayout();
- return pdfToWordWasm();
+ return pdfToWordReam();
 }
 
-const PIDIEFFE_CONVERTER_URL=new URL("./converter/",window.location.href).href;
-const PIDIEFFE_CONVERTER_ORIGIN=window.location.origin;
-let pidieffeConverterReady=false;
-let pidieffeConverterWaiters=[];
-let pidieffeConversionRequests=new Map();
+let pidieffeReamModule=null;
 
-function ensurePidieffeConverter(){
- let iframe=document.getElementById("pidieffeConverterFrame");
- if(!iframe){
-   iframe=document.createElement("iframe");
-   iframe.id="pidieffeConverterFrame";
-   iframe.src=PIDIEFFE_CONVERTER_URL;
-   iframe.title="PIDIEFFE document conversion engine";
-   iframe.setAttribute("aria-hidden","true");
-   iframe.style.cssText="position:absolute;width:320px;height:240px;opacity:0.001;pointer-events:none;left:-5000px;top:0;border:0";
-   document.body.appendChild(iframe);
+async function loadReam(){
+ if(pidieffeReamModule)return pidieffeReamModule;
+ statusText.textContent="Caricamento motore PDF → Word...";
+ try{
+   pidieffeReamModule=await import("https://esm.run/reamkit@1.29.0");
+   if(!pidieffeReamModule?.Ream)throw new Error("Modulo Ream non valido");
+   return pidieffeReamModule;
+ }catch(err){
+   pidieffeReamModule=null;
+   console.error(err);
+   throw new Error("Impossibile caricare il motore PDF → Word. Controlla la connessione e riprova.");
  }
- return iframe;
 }
 
-window.addEventListener("message",(event)=>{
- if(event.origin!==PIDIEFFE_CONVERTER_ORIGIN) return;
- const data=event.data||{};
- if(data.type==="ready"){
-   pidieffeConverterReady=true;
-   for(const w of pidieffeConverterWaiters.splice(0)) w.resolve();
-   return;
- }
- if(data.type==="result" && data.requestId && pidieffeConversionRequests.has(data.requestId)){
-   const req=pidieffeConversionRequests.get(data.requestId);
-   clearTimeout(req.timer);
-   pidieffeConversionRequests.delete(data.requestId);
-   req.resolve(new Blob([data.data],{type:data.mimeType||"application/vnd.openxmlformats-officedocument.wordprocessingml.document"}));
-   return;
- }
- if(data.type==="error" && data.requestId && pidieffeConversionRequests.has(data.requestId)){
-   const req=pidieffeConversionRequests.get(data.requestId);
-   clearTimeout(req.timer);
-   pidieffeConversionRequests.delete(data.requestId);
-   req.reject(new Error(data.error||"Conversione non riuscita."));
- }
-});
-
-function waitPidieffeConverter(timeout=180000){
- ensurePidieffeConverter();
- if(pidieffeConverterReady) return Promise.resolve();
- return new Promise((resolve,reject)=>{
-   const item={resolve,reject};
-   pidieffeConverterWaiters.push(item);
-   setTimeout(()=>{
-     const i=pidieffeConverterWaiters.indexOf(item);
-     if(i>=0)pidieffeConverterWaiters.splice(i,1);
-     if(!pidieffeConverterReady)reject(new Error("Il motore LibreOffice WebAssembly non si è avviato. Ricarica la pagina e riprova."));
-   },timeout);
- });
-}
-
-function convertWithPidieffeWasm(buffer,format="docx",timeout=240000){
- const iframe=ensurePidieffeConverter();
- return new Promise((resolve,reject)=>{
-   const requestId="pidieffe_"+Date.now()+"_"+Math.random().toString(36).slice(2);
-   const timer=setTimeout(()=>{
-     pidieffeConversionRequests.delete(requestId);
-     reject(new Error("Conversione scaduta. Prova con un PDF più piccolo."));
-   },timeout);
-   pidieffeConversionRequests.set(requestId,{resolve,reject,timer});
-   iframe.contentWindow.postMessage({
-     type:"convert",
-     buffer,
-     format,
-     requestId
-   },PIDIEFFE_CONVERTER_ORIGIN);
- });
-}
-
-async function pdfToWordWasm(){
+async function pdfToWordReam(){
  const file=files[0];
  if(!file)throw new Error("Carica un PDF.");
- statusText.textContent="Avvio LibreOffice WebAssembly...";
- await waitPidieffeConverter();
- statusText.textContent="Conversione PDF → Word in corso...";
- const buffer=await file.arrayBuffer();
- const blob=await convertWithPidieffeWasm(buffer,"docx");
- const url=URL.createObjectURL(blob);
- const a=document.createElement("a");
- a.href=url;
- a.download=file.name.replace(/\.pdf$/i,"")+".docx";
- document.body.appendChild(a);
- a.click();
- a.remove();
- setTimeout(()=>URL.revokeObjectURL(url),2000);
- statusText.textContent="Word pronto.";
+
+ const {Ream}=await loadReam();
+ statusText.textContent="Analisi del PDF...";
+ const bytes=new Uint8Array(await file.arrayBuffer());
+
+ let doc;
+ try{
+   doc=Ream.parse(bytes);
+ }catch(err){
+   console.error(err);
+   throw new Error("Il PDF non può essere interpretato dal convertitore. Prova “Copia visiva nel Word”.");
+ }
+
+ statusText.textContent="Creazione del documento Word...";
+ try{
+   const result=await doc.convert("docx");
+   const outBytes=result instanceof Uint8Array ? result : new Uint8Array(result);
+   const blob=new Blob([outBytes],{
+     type:"application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+   });
+   const url=URL.createObjectURL(blob);
+   const a=document.createElement("a");
+   a.href=url;
+   a.download=file.name.replace(/\.pdf$/i,"")+".docx";
+   document.body.appendChild(a);
+   a.click();
+   a.remove();
+   setTimeout(()=>URL.revokeObjectURL(url),3000);
+   statusText.textContent="Word pronto.";
+ }catch(err){
+   console.error(err);
+   throw new Error("Conversione DOCX non riuscita per questo PDF. Prova “Copia visiva nel Word”.");
+ }
 }
+
 async function pdfToWordLayout(){
  const pdf=await pdfjsLib.getDocument({data:new Uint8Array(await ab(files[0]))}).promise;
  const zip=new JSZip(); addDocxBase(zip,files[0].name.replace(/\.pdf$/i,""));
@@ -1509,9 +1470,7 @@ async function pdfToWordEditable(){
 
 })();
 
-window.addEventListener("load",()=>{
- setTimeout(()=>{try{ensurePidieffeConverter()}catch(e){}},1200);
-});
+
 
 </script>
 </body>
