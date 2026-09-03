@@ -362,6 +362,13 @@ footer{border-top:1px solid var(--line);padding:24px 0;color:var(--muted);font-s
   color:#fff;
 }
 
+.tool-card[data-tool="protect"]{display:none!important;}.tool-card[data-tool="unlock"]{display:none!important;}.tool-card[data-tool="pdftojpg"]{display:none!important;}.tool-card[data-tool="pdftoword"]{display:none!important;}.tool-card[data-tool="pagenumbers"]{display:none!important;}
+.editor-added-image{position:absolute;z-index:19;border:1px dashed #555;box-sizing:border-box;touch-action:none;user-select:none}
+.editor-added-image.selected{outline:2px solid var(--accent)}
+.editor-added-image img{width:100%;height:100%;display:block;pointer-events:none}
+.image-move,.image-delete{position:absolute;top:-13px;width:27px;height:27px;border:1px solid #aaa;border-radius:50%;background:#fff;padding:0;z-index:3}
+.image-move{left:-13px;cursor:grab;touch-action:none}.image-delete{right:-13px;cursor:pointer}
+.image-resize{position:absolute;right:-8px;bottom:-8px;width:16px;height:16px;background:var(--accent);border:2px solid #fff;border-radius:3px;cursor:nwse-resize;touch-action:none}
 </style>
 </head>
 <body>
@@ -667,13 +674,13 @@ async function initPdfEditor(file){
  const pdf=await pdfjsLib.getDocument({data:bytes.slice()}).promise;
 
  editorState={
-  file,bytes,pdf,tool:"edittext",color:"#d9413a",fontSize:18,fontFamily:"Arial",fontWeight:"normal",fontStyle:"normal",selectedNewText:null,stroke:3,
+  file,bytes,pdf,tool:"edittext",color:"#d9413a",fontSize:18,fontFamily:"Arial",fontWeight:"normal",fontStyle:"normal",selectedNewText:null,selectedImage:null,images:{},nextImageId:1,stroke:3,
   zoom:1,fit:true,ops:{},textEdits:{},newTexts:{},pageViews:{},nextTextId:1
  };
  for(let i=1;i<=pdf.numPages;i++){
   editorState.ops[i]=[];
   editorState.textEdits[i]=[];
-  editorState.newTexts[i]=[];
+  editorState.newTexts[i]=[];editorState.images[i]=[];
  }
 
  mount.innerHTML=`
@@ -681,6 +688,7 @@ async function initPdfEditor(file){
   <div class="editor-toolbar" aria-label="Strumenti modifica PDF">
    <button type="button" data-editor-tool="edittext" class="active">Aa Modifica testo</button>
    <button type="button" data-editor-tool="text">T Nuovo testo</button>
+<button type="button" data-editor-tool="image" title="Aggiungi immagine">🖼 Immagine</button>
    <button type="button" data-editor-tool="whiteout">▭ Correggi</button>
    <button type="button" data-editor-tool="highlight">▰ Evidenzia</button>
    <button type="button" data-editor-tool="draw">✎ Disegna</button>
@@ -698,7 +706,7 @@ async function initPdfEditor(file){
     <button type="button" class="format-toggle" id="editorItalic" title="Corsivo"><em>I</em></button>
     <label title="Colore"><input id="editorColor" type="color" value="#d9413a" aria-label="Colore"></label>
    </div>
-   <button type="button" id="editorUndo">↶ Annulla</button>
+   <button type="button" id="editorUndo">↶ Annulla</button><input id="editorImageInput" type="file" accept="image/png,image/jpeg,image/webp" hidden>
    <button type="button" id="editorClear">Pulisci pagina</button>
    <div class="editor-zoom">
     <button type="button" id="zoomOut" title="Riduci">−</button>
@@ -781,6 +789,9 @@ function applyToolbarStyleToSelected(){
 }
 
 function bindEditorControls(){
+ const imageInput=$("#editorImageInput");
+ imageInput?.addEventListener("change",e=>{const f=e.target.files?.[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{const im=new Image();im.onload=()=>addImageToPage(editorState.currentPage,rd.result,im.naturalWidth,im.naturalHeight);im.src=rd.result};rd.readAsDataURL(f);e.target.value=""});
+
  $$("[data-editor-tool]").forEach(b=>b.addEventListener("click",()=>{
   editorState.tool=b.dataset.editorTool;
   $$("[data-editor-tool]").forEach(x=>x.classList.toggle("active",x===b));
@@ -825,7 +836,9 @@ function bindEditorControls(){
   editorState.ops[page]=[];
   editorState.textEdits[page]=[];
   editorState.newTexts[page]=[];
+  editorState.images[page]=[];
   editorState.selectedNewText=null;
+  editorState.selectedImage=null;
   await renderSingleEditorPage(page,true);
  });
 
@@ -948,7 +961,7 @@ async function renderSingleEditorPage(pageNum, rebuildText=false){
  canvas.style.width=overlay.style.width=vp.width+"px";canvas.style.height=overlay.style.height=vp.height+"px";
  await page.render({canvasContext:canvas.getContext("2d"),viewport:vp}).promise;
  await buildEditableTextLayer(page,vp,pageNum);
- renderNewTextsForPage(pageNum);
+ renderNewTextsForPage(pageNum);renderImagesForPage(pageNum);
  await drawEditorOverlayForPage(pageNum);
  updateEditorPointerModes();
 }
@@ -1010,6 +1023,37 @@ async function buildEditableTextLayer(page,vp,pageNum){
  }
 }
 
+
+function renderImagesForPage(pageNum){
+ const stage=document.querySelector(`.editor-page-stage[data-page="${pageNum}"]`);if(!stage)return;
+ stage.querySelectorAll(".editor-added-image").forEach(x=>x.remove());
+ for(const rec of (editorState.images[pageNum]||[])){
+  const el=document.createElement("div");el.className="editor-added-image";el.dataset.imageId=rec.id;
+  Object.assign(el.style,{left:rec.x+"px",top:rec.y+"px",width:rec.w+"px",height:rec.h+"px"});
+  const img=document.createElement("img");img.src=rec.dataUrl;img.alt="Immagine aggiunta";
+  const mv=document.createElement("button");mv.type="button";mv.className="image-move";mv.textContent="⠿";
+  const del=document.createElement("button");del.type="button";del.className="image-delete";del.textContent="×";
+  const rs=document.createElement("div");rs.className="image-resize";
+  const select=()=>{editorState.selectedImage={page:pageNum,id:rec.id};stage.querySelectorAll(".editor-added-image").forEach(x=>x.classList.toggle("selected",x===el))};
+  el.addEventListener("pointerdown",e=>{e.stopPropagation();select()});
+  let d=null;
+  mv.addEventListener("pointerdown",e=>{e.preventDefault();e.stopPropagation();select();d={id:e.pointerId,sx:e.clientX,sy:e.clientY,x:rec.x,y:rec.y};mv.setPointerCapture(e.pointerId)});
+  mv.addEventListener("pointermove",e=>{if(!d||e.pointerId!==d.id)return;rec.x=Math.max(0,Math.min(stage.clientWidth-rec.w,d.x+e.clientX-d.sx));rec.y=Math.max(0,Math.min(stage.clientHeight-rec.h,d.y+e.clientY-d.sy));el.style.left=rec.x+"px";el.style.top=rec.y+"px"});
+  const stopD=e=>{if(d&&e.pointerId===d.id)d=null};mv.addEventListener("pointerup",stopD);mv.addEventListener("pointercancel",stopD);
+  let r=null;
+  rs.addEventListener("pointerdown",e=>{e.preventDefault();e.stopPropagation();select();r={id:e.pointerId,sx:e.clientX,w:rec.w,ratio:rec.w/rec.h};rs.setPointerCapture(e.pointerId)});
+  rs.addEventListener("pointermove",e=>{if(!r||e.pointerId!==r.id)return;let w=Math.max(30,Math.min(stage.clientWidth-rec.x,r.w+e.clientX-r.sx)),hh=w/r.ratio;if(hh>stage.clientHeight-rec.y){hh=stage.clientHeight-rec.y;w=hh*r.ratio}rec.w=w;rec.h=hh;el.style.width=w+"px";el.style.height=hh+"px"});
+  const stopR=e=>{if(r&&e.pointerId===r.id)r=null};rs.addEventListener("pointerup",stopR);rs.addEventListener("pointercancel",stopR);
+  del.addEventListener("click",e=>{e.stopPropagation();editorState.images[pageNum]=editorState.images[pageNum].filter(x=>x.id!==rec.id);editorState.selectedImage=null;renderImagesForPage(pageNum)});
+  el.append(img,mv,del,rs);stage.appendChild(el);
+ }
+}
+function addImageToPage(pageNum,dataUrl,nw,nh){
+ const stage=document.querySelector(`.editor-page-stage[data-page="${pageNum}"]`);if(!stage)return;
+ const ratio=(nw&&nh)?nw/nh:1.5,w=Math.min(280,stage.clientWidth*.45),hh=w/ratio;
+ const rec={id:editorState.nextImageId++,dataUrl,x:Math.max(10,(stage.clientWidth-w)/2),y:Math.max(10,(stage.clientHeight-hh)/2),w,h:hh};
+ (editorState.images[pageNum]||(editorState.images[pageNum]=[])).push(rec);editorState.selectedImage={page:pageNum,id:rec.id};renderImagesForPage(pageNum);
+}
 function renderNewTextsForPage(pageNum){
  const stage=document.querySelector(`.editor-page-stage[data-page="${pageNum}"]`);if(!stage)return;
  stage.querySelectorAll(".editor-new-text-wrap,.editor-new-text").forEach(x=>x.remove());
@@ -1135,7 +1179,7 @@ function createNewText(pageNum,x,y){
  };
  editorState.newTexts[pageNum].push(rec);
  editorState.selectedNewText={page:pageNum,id:rec.id};
- renderNewTextsForPage(pageNum);
+ renderNewTextsForPage(pageNum);renderImagesForPage(pageNum);
  const box=document.querySelector(`.editor-page-stage[data-page="${pageNum}"] .editor-new-text-wrap[data-new-text-id="${rec.id}"] .editor-new-text`);
  if(box){box.focus();}
  updateEditorPointerModes();
@@ -1225,6 +1269,12 @@ async function saveEditedPdf(){
    ctx.fillText(ed.text||"",ed.x*sx,ed.y*sy);
   }
 
+  for(const imRec of (editorState.images[p]||[])){
+   try{
+    const im=await new Promise((resolve,reject)=>{const x=new Image();x.onload=()=>resolve(x);x.onerror=reject;x.src=imRec.dataUrl});
+    ctx.drawImage(im,imRec.x*sx,imRec.y*sy,imRec.w*sx,imRec.h*sy);
+   }catch(e){console.error("Immagine non salvata",e)}
+  }
   for(const nt of editorState.newTexts[p]||[]){
    if(!nt.text?.trim())continue;
    ctx.fillStyle=nt.color||"#000";ctx.textBaseline="top";
