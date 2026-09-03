@@ -294,6 +294,74 @@ footer{border-top:1px solid var(--line);padding:24px 0;color:var(--muted);font-s
   display:flex !important;
 }
 
+
+/* v20 - movable and styleable inserted text */
+.editor-new-text-wrap{
+  position:absolute;
+  z-index:20;
+  display:flex;
+  align-items:flex-start;
+  gap:4px;
+  min-width:60px;
+}
+.editor-new-text-wrap.selected .editor-new-text{
+  border-style:solid;
+  box-shadow:0 0 0 2px rgba(217,65,58,.15);
+}
+.editor-text-drag{
+  width:22px;
+  height:22px;
+  min-width:22px;
+  padding:0;
+  border:1px solid #b9bec8;
+  border-radius:5px;
+  background:#fff;
+  color:#444;
+  line-height:20px;
+  cursor:grab;
+  font-size:15px;
+  user-select:none;
+  touch-action:none;
+}
+.editor-text-drag:active{cursor:grabbing}
+.editor-new-text{
+  position:relative !important;
+  left:auto !important;
+  top:auto !important;
+  min-width:70px;
+  min-height:24px;
+  padding:2px 4px;
+  border:1px dashed var(--accent);
+  background:rgba(255,255,255,.92);
+  outline:none;
+  white-space:pre-wrap;
+  line-height:1.15;
+  cursor:text;
+  z-index:1;
+}
+.editor-text-style-group{
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.editor-text-style-group select{
+  height:34px;
+  min-width:132px;
+  border:1px solid var(--border);
+  border-radius:8px;
+  background:#fff;
+  padding:0 8px;
+}
+.editor-toolbar .format-toggle{
+  min-width:36px;
+  padding:6px 9px;
+  font-weight:800;
+}
+.editor-toolbar .format-toggle.active{
+  background:#222;
+  color:#fff;
+}
+
 </style>
 </head>
 <body>
@@ -599,7 +667,7 @@ async function initPdfEditor(file){
  const pdf=await pdfjsLib.getDocument({data:bytes.slice()}).promise;
 
  editorState={
-  file,bytes,pdf,tool:"edittext",color:"#d9413a",fontSize:18,stroke:3,
+  file,bytes,pdf,tool:"edittext",color:"#d9413a",fontSize:18,fontFamily:"Arial",fontWeight:"normal",fontStyle:"normal",selectedNewText:null,stroke:3,
   zoom:1,fit:true,ops:{},textEdits:{},newTexts:{},pageViews:{},nextTextId:1
  };
  for(let i=1;i<=pdf.numPages;i++){
@@ -616,8 +684,20 @@ async function initPdfEditor(file){
    <button type="button" data-editor-tool="whiteout">▭ Correggi</button>
    <button type="button" data-editor-tool="highlight">▰ Evidenzia</button>
    <button type="button" data-editor-tool="draw">✎ Disegna</button>
-   <label title="Colore"><input id="editorColor" type="color" value="#d9413a" aria-label="Colore"></label>
-   <label title="Dimensione testo"><input id="editorFontSize" type="number" value="18" min="8" max="72" aria-label="Dimensione testo"></label>
+   <div class="editor-text-style-group" id="editorTextStyleGroup">
+    <select id="editorFontFamily" aria-label="Font">
+      <option value="Arial">Arial</option>
+      <option value="Times New Roman">Times New Roman</option>
+      <option value="Georgia">Georgia</option>
+      <option value="Verdana">Verdana</option>
+      <option value="Trebuchet MS">Trebuchet MS</option>
+      <option value="Courier New">Courier New</option>
+    </select>
+    <label title="Dimensione testo"><input id="editorFontSize" type="number" value="18" min="8" max="120" aria-label="Dimensione testo"></label>
+    <button type="button" class="format-toggle" id="editorBold" title="Grassetto"><strong>B</strong></button>
+    <button type="button" class="format-toggle" id="editorItalic" title="Corsivo"><em>I</em></button>
+    <label title="Colore"><input id="editorColor" type="color" value="#d9413a" aria-label="Colore"></label>
+   </div>
    <button type="button" id="editorUndo">↶ Annulla</button>
    <button type="button" id="editorClear">Pulisci pagina</button>
    <div class="editor-zoom">
@@ -670,6 +750,36 @@ async function buildEditorThumbs(){
  }
 }
 
+
+function getSelectedNewTextRec(){
+ if(!editorState?.selectedNewText)return null;
+ const {page,id}=editorState.selectedNewText;
+ return (editorState.newTexts[page]||[]).find(r=>String(r.id)===String(id))||null;
+}
+
+function syncTextToolbarFromRec(rec){
+ if(!rec)return;
+ const ff=$("#editorFontFamily"),fs=$("#editorFontSize"),c=$("#editorColor");
+ if(ff)ff.value=rec.fontFamily||"Arial";
+ if(fs)fs.value=Math.round(rec.size||18);
+ if(c)c.value=rec.color||"#000000";
+ $("#editorBold")?.classList.toggle("active",(rec.fontWeight||"normal")==="bold");
+ $("#editorItalic")?.classList.toggle("active",(rec.fontStyle||"normal")==="italic");
+}
+
+function applyToolbarStyleToSelected(){
+ const rec=getSelectedNewTextRec();
+ if(!rec)return;
+ rec.fontFamily=editorState.fontFamily;
+ rec.size=editorState.fontSize;
+ rec.color=editorState.color;
+ rec.fontWeight=editorState.fontWeight;
+ rec.fontStyle=editorState.fontStyle;
+ renderNewTextsForPage(editorState.selectedNewText.page);
+ const box=document.querySelector(`.editor-page-stage[data-page="${editorState.selectedNewText.page}"] .editor-new-text-wrap[data-new-text-id="${rec.id}"] .editor-new-text`);
+ if(box)box.focus();
+}
+
 function bindEditorControls(){
  $$("[data-editor-tool]").forEach(b=>b.addEventListener("click",()=>{
   editorState.tool=b.dataset.editorTool;
@@ -677,14 +787,34 @@ function bindEditorControls(){
   updateEditorPointerModes();
  }));
 
- $("#editorColor").addEventListener("input",e=>editorState.color=e.target.value);
- $("#editorFontSize").addEventListener("input",e=>editorState.fontSize=Math.max(8,Math.min(72,Number(e.target.value)||18)));
+ $("#editorColor").addEventListener("input",e=>{
+  editorState.color=e.target.value;
+  applyToolbarStyleToSelected();
+ });
+ $("#editorFontSize").addEventListener("input",e=>{
+  editorState.fontSize=Math.max(8,Math.min(120,Number(e.target.value)||18));
+  applyToolbarStyleToSelected();
+ });
+ $("#editorFontFamily").addEventListener("change",e=>{
+  editorState.fontFamily=e.target.value||"Arial";
+  applyToolbarStyleToSelected();
+ });
+ $("#editorBold").addEventListener("click",()=>{
+  editorState.fontWeight=editorState.fontWeight==="bold"?"normal":"bold";
+  $("#editorBold").classList.toggle("active",editorState.fontWeight==="bold");
+  applyToolbarStyleToSelected();
+ });
+ $("#editorItalic").addEventListener("click",()=>{
+  editorState.fontStyle=editorState.fontStyle==="italic"?"normal":"italic";
+  $("#editorItalic").classList.toggle("active",editorState.fontStyle==="italic");
+  applyToolbarStyleToSelected();
+ });
 
  $("#editorUndo").addEventListener("click",async()=>{
   const page=currentVisibleEditorPage();
   if(!page)return;
   if(editorState.ops[page].length)editorState.ops[page].pop();
-  else if(editorState.newTexts[page].length)editorState.newTexts[page].pop();
+  else if(editorState.newTexts[page].length){editorState.newTexts[page].pop();editorState.selectedNewText=null;}
   else if(editorState.textEdits[page].length)editorState.textEdits[page].pop();
   await renderSingleEditorPage(page,true);
  });
@@ -695,6 +825,7 @@ function bindEditorControls(){
   editorState.ops[page]=[];
   editorState.textEdits[page]=[];
   editorState.newTexts[page]=[];
+  editorState.selectedNewText=null;
   await renderSingleEditorPage(page,true);
  });
 
@@ -881,26 +1012,131 @@ async function buildEditableTextLayer(page,vp,pageNum){
 
 function renderNewTextsForPage(pageNum){
  const stage=document.querySelector(`.editor-page-stage[data-page="${pageNum}"]`);if(!stage)return;
- stage.querySelectorAll(".editor-new-text").forEach(x=>x.remove());
- const view=editorState.pageViews[pageNum];
+ stage.querySelectorAll(".editor-new-text-wrap,.editor-new-text").forEach(x=>x.remove());
+
  for(const rec of editorState.newTexts[pageNum]){
+  const wrap=document.createElement("div");
+  wrap.className="editor-new-text-wrap";
+  wrap.dataset.newTextId=rec.id;
+  wrap.style.left=rec.x+"px";
+  wrap.style.top=rec.y+"px";
+  if(editorState.selectedNewText?.page===pageNum && String(editorState.selectedNewText.id)===String(rec.id)){
+    wrap.classList.add("selected");
+  }
+
+  const handle=document.createElement("button");
+  handle.type="button";
+  handle.className="editor-text-drag";
+  handle.textContent="⠿";
+  handle.title="Trascina per spostare il testo";
+  handle.setAttribute("aria-label","Sposta testo");
+
   const box=document.createElement("div");
-  box.className="editor-new-text";box.contentEditable="true";box.spellcheck=false;box.dataset.newTextId=rec.id;
-  box.textContent=rec.text||"";box.style.left=rec.x+"px";box.style.top=rec.y+"px";
-  box.style.color=rec.color;box.style.fontSize=rec.size+"px";
-  box.addEventListener("input",()=>{
-   rec.text=box.innerText;rec.w=box.offsetWidth;rec.h=box.offsetHeight;
+  box.className="editor-new-text";
+  box.contentEditable="true";
+  box.spellcheck=false;
+  box.textContent=rec.text||"";
+  box.style.color=rec.color||"#000";
+  box.style.fontSize=(rec.size||18)+"px";
+  box.style.fontFamily=`"${rec.fontFamily||"Arial"}", sans-serif`;
+  box.style.fontWeight=rec.fontWeight||"normal";
+  box.style.fontStyle=rec.fontStyle||"normal";
+
+  const selectThis=()=>{
+    editorState.selectedNewText={page:pageNum,id:rec.id};
+    editorState.fontFamily=rec.fontFamily||"Arial";
+    editorState.fontSize=rec.size||18;
+    editorState.color=rec.color||"#000000";
+    editorState.fontWeight=rec.fontWeight||"normal";
+    editorState.fontStyle=rec.fontStyle||"normal";
+    syncTextToolbarFromRec(rec);
+    stage.querySelectorAll(".editor-new-text-wrap").forEach(w=>w.classList.toggle("selected",w===wrap));
+  };
+
+  box.addEventListener("pointerdown",e=>{e.stopPropagation();selectThis()});
+  box.addEventListener("focus",()=>{
+    selectThis();
+    editorState.tool="text";
+    $$("[data-editor-tool]").forEach(b=>b.classList.toggle("active",b.dataset.editorTool==="text"));
+    updateEditorPointerModes();
   });
-  box.addEventListener("focus",()=>{editorState.tool="text";$$("[data-editor-tool]").forEach(b=>b.classList.toggle("active",b.dataset.editorTool==="text"));updateEditorPointerModes()});
-  stage.appendChild(box);
+  box.addEventListener("input",()=>{
+    rec.text=box.innerText;
+    rec.w=box.offsetWidth;
+    rec.h=box.offsetHeight;
+  });
+  box.addEventListener("keydown",e=>{
+    if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==="b"){
+      e.preventDefault();$("#editorBold")?.click();
+    }
+    if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==="i"){
+      e.preventDefault();$("#editorItalic")?.click();
+    }
+  });
+
+  let drag=null;
+  handle.addEventListener("pointerdown",e=>{
+    e.preventDefault();e.stopPropagation();selectThis();
+    const rect=stage.getBoundingClientRect();
+    drag={
+      pointerId:e.pointerId,
+      startX:e.clientX,startY:e.clientY,
+      origX:rec.x,origY:rec.y,
+      stageW:stage.clientWidth,stageH:stage.clientHeight
+    };
+    handle.setPointerCapture(e.pointerId);
+  });
+  handle.addEventListener("pointermove",e=>{
+    if(!drag||e.pointerId!==drag.pointerId)return;
+    e.preventDefault();
+    const nx=drag.origX+(e.clientX-drag.startX);
+    const ny=drag.origY+(e.clientY-drag.startY);
+    rec.x=Math.max(0,Math.min(stage.clientWidth-wrap.offsetWidth,nx));
+    rec.y=Math.max(0,Math.min(stage.clientHeight-wrap.offsetHeight,ny));
+    wrap.style.left=rec.x+"px";
+    wrap.style.top=rec.y+"px";
+  });
+  const finishDrag=e=>{
+    if(!drag||e.pointerId!==drag.pointerId)return;
+    try{handle.releasePointerCapture(e.pointerId)}catch(_){}
+    drag=null;
+  };
+  handle.addEventListener("pointerup",finishDrag);
+  handle.addEventListener("pointercancel",finishDrag);
+
+  // Accessible fine movement without dragging.
+  handle.addEventListener("keydown",e=>{
+    const step=e.shiftKey?10:1;
+    if(!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key))return;
+    e.preventDefault();selectThis();
+    if(e.key==="ArrowLeft")rec.x-=step;
+    if(e.key==="ArrowRight")rec.x+=step;
+    if(e.key==="ArrowUp")rec.y-=step;
+    if(e.key==="ArrowDown")rec.y+=step;
+    rec.x=Math.max(0,Math.min(stage.clientWidth-wrap.offsetWidth,rec.x));
+    rec.y=Math.max(0,Math.min(stage.clientHeight-wrap.offsetHeight,rec.y));
+    wrap.style.left=rec.x+"px";wrap.style.top=rec.y+"px";
+  });
+
+  wrap.appendChild(handle);
+  wrap.appendChild(box);
+  stage.appendChild(wrap);
  }
 }
 
 function createNewText(pageNum,x,y){
- const rec={id:editorState.nextTextId++,text:"",x,y,color:editorState.color,size:editorState.fontSize,w:120,h:28};
+ const rec={
+  id:editorState.nextTextId++,text:"",x,y,
+  color:editorState.color,size:editorState.fontSize,
+  fontFamily:editorState.fontFamily||"Arial",
+  fontWeight:editorState.fontWeight||"normal",
+  fontStyle:editorState.fontStyle||"normal",
+  w:120,h:28
+ };
  editorState.newTexts[pageNum].push(rec);
+ editorState.selectedNewText={page:pageNum,id:rec.id};
  renderNewTextsForPage(pageNum);
- const box=document.querySelector(`.editor-page-stage[data-page="${pageNum}"] .editor-new-text[data-new-text-id="${rec.id}"]`);
+ const box=document.querySelector(`.editor-page-stage[data-page="${pageNum}"] .editor-new-text-wrap[data-new-text-id="${rec.id}"] .editor-new-text`);
  if(box){box.focus();}
  updateEditorPointerModes();
 }
@@ -991,7 +1227,11 @@ async function saveEditedPdf(){
 
   for(const nt of editorState.newTexts[p]||[]){
    if(!nt.text?.trim())continue;
-   ctx.fillStyle=nt.color||"#000";ctx.textBaseline="top";ctx.font=`${Math.max(8,nt.size*sy)}px Arial`;
+   ctx.fillStyle=nt.color||"#000";ctx.textBaseline="top";
+   const nStyle=nt.fontStyle==="italic"?"italic ":"";
+   const nWeight=nt.fontWeight==="bold"?"bold ":"";
+   const nFamily=(nt.fontFamily||"Arial").replace(/"/g,"");
+   ctx.font=`${nStyle}${nWeight}${Math.max(8,nt.size*sy)}px "${nFamily}"`;
    nt.text.split(/\n/).forEach((line,i)=>ctx.fillText(line,nt.x*sx,(nt.y+i*nt.size*1.15)*sy));
   }
 
