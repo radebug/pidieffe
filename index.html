@@ -369,6 +369,10 @@ footer{border-top:1px solid var(--line);padding:24px 0;color:var(--muted);font-s
 .image-move,.image-delete{position:absolute;top:-13px;width:27px;height:27px;border:1px solid #aaa;border-radius:50%;background:#fff;padding:0;z-index:3}
 .image-move{left:-13px;cursor:grab;touch-action:none}.image-delete{right:-13px;cursor:pointer}
 .image-resize{position:absolute;right:-8px;bottom:-8px;width:16px;height:16px;background:var(--accent);border:2px solid #fff;border-radius:3px;cursor:nwse-resize;touch-action:none}
+
+.editor-existing-text{cursor:grab!important;touch-action:none}
+.editor-existing-text:focus{cursor:text!important}
+.editor-existing-text.text-moving{outline:2px dashed var(--accent)!important;outline-offset:2px;background:rgba(255,255,255,.92)!important;color:#111!important}
 </style>
 </head>
 <body>
@@ -1019,35 +1023,73 @@ async function buildEditableTextLayer(page,vp,pageNum){
   const tx=pdfjsLib.Util.transform(vp.transform,item.transform);
   const fontHeight=Math.max(8,Math.hypot(tx[2],tx[3]));
   const angle=Math.atan2(tx[1],tx[0]);
-  const left=tx[4],top=tx[5]-fontHeight;
+  const originalLeft=tx[4],originalTop=tx[5]-fontHeight;
   const width=Math.max(4,(item.width||0)*vp.scale);
   const id=idx++;
   const saved=stored.find(x=>x.id===id);
+  const left=saved?.x??originalLeft,top=saved?.y??originalTop;
   const div=document.createElement("div");
-  div.className="editor-existing-text"+(saved&&saved.text!==item.str?" changed":"");
-  div.contentEditable="true";div.spellcheck=false;div.title="Clicca per modificare questo testo";
+  const isChanged=saved&&(saved.text!==item.str||Math.abs(left-originalLeft)>.5||Math.abs(top-originalTop)>.5);
+  div.className="editor-existing-text"+(isChanged?" changed":"");
+  div.contentEditable="true";div.spellcheck=false;
+  div.title="Trascina per spostare • clicca per modificare";
   div.dataset.textId=String(id);div.dataset.original=item.str;
   div.textContent=saved?saved.text:item.str;
   div.style.left=left+"px";div.style.top=top+"px";div.style.fontSize=fontHeight+"px";
   div.style.fontFamily="Arial, sans-serif";div.style.transform=`rotate(${angle}rad)`;
   div.style.minWidth=Math.max(8,width)+"px";div.style.height=Math.max(12,fontHeight*1.18)+"px";
+
+  const saveRecord=()=>{
+   const text=div.innerText.replace(/\n/g," ");
+   const rec={id,original:item.str,text,x:parseFloat(div.style.left)||0,y:parseFloat(div.style.top)||0,
+    originalX:originalLeft,originalY:originalTop,w:Math.max(width,div.offsetWidth),h:Math.max(fontHeight*1.18,div.offsetHeight),size:fontHeight,angle};
+   const arr=editorState.textEdits[pageNum],pos=arr.findIndex(x=>x.id===id);
+   const changed=rec.text!==rec.original||Math.abs(rec.x-rec.originalX)>.5||Math.abs(rec.y-rec.originalY)>.5;
+   if(pos>=0)arr[pos]=rec;else if(changed)arr.push(rec);
+   div.classList.toggle("changed",changed);
+   return rec;
+  };
+
+  let drag=null,moved=false;
+  div.addEventListener("pointerdown",e=>{
+   if(e.button!==0)return;
+   // Existing text can be dragged directly. A short click still enters text editing.
+   moved=false;
+   drag={id:e.pointerId,sx:e.clientX,sy:e.clientY,x:parseFloat(div.style.left)||left,y:parseFloat(div.style.top)||top};
+   div.setPointerCapture?.(e.pointerId);
+  });
+  div.addEventListener("pointermove",e=>{
+   if(!drag||e.pointerId!==drag.id)return;
+   const dx=e.clientX-drag.sx,dy=e.clientY-drag.sy;
+   if(!moved&&Math.hypot(dx,dy)<4)return;
+   moved=true;e.preventDefault();
+   div.classList.add("text-moving");
+   div.contentEditable="false";
+   const maxX=Math.max(0,layer.clientWidth-div.offsetWidth),maxY=Math.max(0,layer.clientHeight-div.offsetHeight);
+   div.style.left=Math.max(0,Math.min(maxX,drag.x+dx))+"px";
+   div.style.top=Math.max(0,Math.min(maxY,drag.y+dy))+"px";
+  });
+  const stopDrag=e=>{
+   if(!drag||e.pointerId!==drag.id)return;
+   try{div.releasePointerCapture?.(e.pointerId)}catch(_){}
+   drag=null;
+   div.classList.remove("text-moving");
+   div.contentEditable="true";
+   if(moved){saveRecord();window.getSelection()?.removeAllRanges();div.blur();}
+  };
+  div.addEventListener("pointerup",stopDrag);
+  div.addEventListener("pointercancel",stopDrag);
+
   div.addEventListener("focus",()=>{
+   if(moved)return;
    requestAnimationFrame(()=>{
     const sel=window.getSelection(),range=document.createRange();
     if(sel&&document.activeElement===div){
-      range.selectNodeContents(div);
-      sel.removeAllRanges();
-      sel.addRange(range);
+      range.selectNodeContents(div);sel.removeAllRanges();sel.addRange(range);
     }
    });
   });
-  div.addEventListener("input",()=>{
-   const text=div.innerText.replace(/\n/g," ");
-   const rec={id,original:item.str,text,x:left,y:top,w:Math.max(width,div.offsetWidth),h:Math.max(fontHeight*1.18,div.offsetHeight),size:fontHeight,angle};
-   const arr=editorState.textEdits[pageNum],pos=arr.findIndex(x=>x.id===id);
-   if(pos>=0)arr[pos]=rec;else arr.push(rec);
-   div.classList.toggle("changed",text!==item.str);
-  });
+  div.addEventListener("input",saveRecord);
   layer.appendChild(div);
  }
 }
@@ -1275,7 +1317,7 @@ async function saveEditedPdf(){
  const out=await PDFLib.PDFDocument.create();
 
  for(let p=1;p<=source.getPageCount();p++){
-  const changed=(editorState.textEdits[p]||[]).some(x=>x.text!==x.original)||(editorState.newTexts[p]||[]).some(x=>x.text?.trim())||(editorState.ops[p]||[]).length>0;
+  const changed=(editorState.textEdits[p]||[]).some(x=>x.text!==x.original||Math.abs((x.x??0)-(x.originalX??x.x??0))>.5||Math.abs((x.y??0)-(x.originalY??x.y??0))>.5)||(editorState.newTexts[p]||[]).some(x=>x.text?.trim())||(editorState.images[p]||[]).length>0||(editorState.ops[p]||[]).length>0;
   if(!changed){
    const [cp]=await out.copyPages(source,[p-1]);
    out.addPage(cp);
@@ -1292,8 +1334,12 @@ async function saveEditedPdf(){
   const sx=canvas.width/view.width,sy=canvas.height/view.height;
 
   for(const ed of editorState.textEdits[p]||[]){
-   if(ed.text===ed.original)continue;
-   ctx.fillStyle="#fff";ctx.fillRect(ed.x*sx,ed.y*sy,Math.max(2,ed.w*sx),Math.max(2,ed.h*sy));
+   const moved=Math.abs((ed.x??0)-(ed.originalX??ed.x??0))>.5||Math.abs((ed.y??0)-(ed.originalY??ed.y??0))>.5;
+   const edited=ed.text!==ed.original;
+   if(!moved&&!edited)continue;
+   const ox=ed.originalX??ed.x,oy=ed.originalY??ed.y;
+   ctx.fillStyle="#fff";
+   ctx.fillRect(ox*sx,oy*sy,Math.max(2,ed.w*sx+3),Math.max(2,ed.h*sy+2));
    ctx.fillStyle="#111";ctx.textBaseline="top";ctx.font=`${Math.max(8,ed.size*sy)}px Arial`;
    ctx.fillText(ed.text||"",ed.x*sx,ed.y*sy);
   }
