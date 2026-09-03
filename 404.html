@@ -1310,6 +1310,29 @@ function hexRgb(hex){
  return{r:parseInt(h.slice(0,2),16)/255,g:parseInt(h.slice(2,4),16)/255,b:parseInt(h.slice(4,6),16)/255};
 }
 
+
+function restoreMovedTextBackground(ctx,source,x,y,w,h){
+  if(w<=0||h<=0)return;
+  const cw=source.width,ch=source.height;
+  x=Math.max(0,Math.min(cw-1,Math.round(x)));
+  y=Math.max(0,Math.min(ch-1,Math.round(y)));
+  w=Math.max(1,Math.min(cw-x,Math.round(w)));
+  h=Math.max(1,Math.min(ch-y,Math.round(h)));
+
+  // Rebuild the old text area from the immediately surrounding background.
+  // No white rectangle is painted.
+  const strip=Math.max(2,Math.min(6,Math.round(h*.18)));
+  if(y>=strip){
+    ctx.drawImage(source,x,y-strip,w,strip,x,y,w,h);
+  }else if(y+h+strip<=ch){
+    ctx.drawImage(source,x,y+h,w,strip,x,y,w,h);
+  }else if(x>=strip){
+    ctx.drawImage(source,x-strip,y,strip,h,x,y,w,h);
+  }else if(x+w+strip<=cw){
+    ctx.drawImage(source,x+w,y,strip,h,x,y,w,h);
+  }
+}
+
 async function saveEditedPdf(){
  if(!editorState)return;
  statusText.textContent="Ricostruzione PDF modificato...";
@@ -1330,6 +1353,11 @@ async function saveEditedPdf(){
   const ctx=canvas.getContext("2d");
   await pdfPage.render({canvasContext:ctx,viewport:renderVp}).promise;
 
+  const originalCanvas=document.createElement("canvas");
+  originalCanvas.width=canvas.width;
+  originalCanvas.height=canvas.height;
+  originalCanvas.getContext("2d").drawImage(canvas,0,0);
+
   const view=editorState.pageViews[p]||{width:renderVp.width/2.2,height:renderVp.height/2.2};
   const sx=canvas.width/view.width,sy=canvas.height/view.height;
 
@@ -1338,9 +1366,16 @@ async function saveEditedPdf(){
    const edited=ed.text!==ed.original;
    if(!moved&&!edited)continue;
    const ox=ed.originalX??ed.x,oy=ed.originalY??ed.y;
-   ctx.fillStyle="#fff";
-   ctx.fillRect(ox*sx,oy*sy,Math.max(2,ed.w*sx+3),Math.max(2,ed.h*sy+2));
-   ctx.fillStyle="#111";ctx.textBaseline="top";ctx.font=`${Math.max(8,ed.size*sy)}px Arial`;
+   const rx=Math.max(0,Math.floor(ox*sx-1));
+   const ry=Math.max(0,Math.floor(oy*sy-1));
+   const rw=Math.min(canvas.width-rx,Math.ceil(ed.w*sx+2));
+   const rh=Math.min(canvas.height-ry,Math.ceil(ed.h*sy+2));
+
+   restoreMovedTextBackground(ctx,originalCanvas,rx,ry,rw,rh);
+
+   ctx.fillStyle="#111";
+   ctx.textBaseline="top";
+   ctx.font=`${Math.max(8,ed.size*sy)}px Arial`;
    ctx.fillText(ed.text||"",ed.x*sx,ed.y*sy);
   }
 
